@@ -40,7 +40,7 @@ class KGE(nn.Module):
 class Rescal(KGE):
 
     def __init__(self,n_ents,n_rels,ent_dim):
-        super(Rescal,self).__init__(n_ents,n_rels,ent_dim,ent_dim*ent_dim,max_norm=True)
+        super(Rescal,self).__init__(n_ents,n_rels,ent_dim,ent_dim*ent_dim,max_norm=False)
         self.dim = ent_dim
         print("Initializing RESCAL model")
 

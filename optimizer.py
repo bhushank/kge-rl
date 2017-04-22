@@ -38,8 +38,8 @@ class SGD(object):
         self.prev_time = time.time()
 
         #Loss
-        self.mm = nn.MultiMarginLoss()
-        self.logistic = nn.MultiLabelSoftMarginLoss()
+        self.mm = nn.MarginRankingLoss(margin=1)
+        self.logistic = nn.SoftMarginLoss()
 
 
     def minimize(self):
@@ -75,18 +75,26 @@ class SGD(object):
         s_score = self.model(*s_batch)
         t_score = self.model(*t_batch)
         # score at index 0 is positive
-        if self.model_name=='transE':
-            y = util.to_var(np.zeros(len(batch), dtype='int64'),volatile=volatile)
-            loss = self.mm(s_score,y) + self.mm(t_score,y)
-        else:
-            loss = self.nll_criterion(s_score,volatile) + self.nll_criterion(t_score,volatile)
-        return loss
+        if self.model_name in {'transE', 'rescal'}:
+            return self.max_margin(s_score,volatile)+ self.max_margin(t_score,volatile)
+        return self.nll(s_score,volatile) + self.nll(t_score,volatile)
 
-    def nll_criterion(self,scores,volatile):
-        y = np.zeros(scores.size(),dtype='float32')
-        y[:,0] = 1
-        y = util.to_var(y,volatile=volatile)
-        return self.logistic(scores,y)
+
+    def max_margin(self,scores,volatile):
+        y = util.to_var(np.ones(scores.size()[0],dtype='float32'),volatile=volatile)
+        loss = self.mm(scores[:,0],scores[:,1],y)
+        for i in range(2,scores.size()[1]):
+            loss += self.mm(scores[:,0],scores[:,i],y)
+        return loss/(scores.size()[1]-1.)
+
+    def nll(self,scores,volatile):
+        y_pos = util.to_var(np.ones(scores.size()[0],dtype='float32'),volatile=volatile)
+        y_neg = util.to_var(-1.*np.ones(scores.size()[0], dtype='float32'),volatile=volatile)
+        loss = self.logistic(scores[:, 0],y_pos)
+        for i in range(1,scores.size()[1]):
+            loss += self.logistic(scores[:, i], y_neg)
+        return loss/scores.size()[1]
+
 
     def save(self):
         curr_score = self.evaluate(self.dev,self.test_batch_size,True)

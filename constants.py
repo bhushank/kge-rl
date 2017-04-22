@@ -6,7 +6,7 @@ rel_ind = 'relations.cpkl'
 
 
 '''SGD Batch Size'''
-batch_size = 4000
+batch_size = 40000
 test_batch_size = 5000
 
 '''Negatives'''

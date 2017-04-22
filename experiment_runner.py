@@ -39,11 +39,14 @@ def train(config,exp_name,data_path,resume=False):
     os.makedirs(results_dir)
     json.dump(config,open(os.path.join(results_dir,'config.json'),'w'),
               sort_keys=True,separators=(',\n', ': '))
-
-    data_set = data_loader.read_dataset(data_path,results_dir,dev_mode=True,max_examples=float('inf'))
-    cuda = torch.cuda.is_available()
     is_dev = config['is_dev']
     print("\n***{} MODE***\n".format('DEV' if is_dev else 'TEST'))
+    if not is_dev:
+        print("\n***Changing TEST to DEV***\n")
+        config['is_dev'] = True
+    data_set = data_loader.read_dataset(data_path,results_dir,dev_mode=True,max_examples=float('inf'))
+    cuda = torch.cuda.is_available()
+
     print("Number of training data points {}".format(len(data_set['train'])))
     print("Number of dev data points {}".format(len(data_set['test'])))
 

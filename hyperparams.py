@@ -4,7 +4,7 @@ import constants
 
 def main():
     data = 'freebase'
-    base = "/home/kotnis/data/neg_sampling/"
+    base = "/home/mitarb/kotnis/Data/neg_sampling/"
     #models = {'rescal','transE','distmult','complex'}
     models = {'rescal'}
     for model in models:
