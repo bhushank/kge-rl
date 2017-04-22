@@ -26,13 +26,13 @@ class RankEvaluator(Evaluator):
         # write if curr_score less than prev_score
         return curr_score < prev_score + self.tol
 
-    def evaluate(self,batch):
-        s_negs = self.ns.batch_sample(batch, False)
-        t_negs = self.ns.batch_sample(batch, True)
+    def evaluate(self,batch,num_negs=0):
+        s_negs = self.ns.batch_sample(batch, False,num_negs)
+        t_negs = self.ns.batch_sample(batch, True,num_negs)
         s_scores = self.model.predict(batch,s_negs, False).data.cpu().numpy()
         t_scores = self.model.predict(batch, t_negs,True).data.cpu().numpy()
-        s_rank = util.ranks(s_scores, ascending=False)
-        t_rank = util.ranks(t_scores, ascending=False)
+        s_rank = np.mean(util.ranks(s_scores, ascending=False))
+        t_rank = np.mean(util.ranks(t_scores, ascending=False))
         return (s_rank + t_rank)/2.
 
 
@@ -44,66 +44,21 @@ class TestEvaluator(Evaluator):
 
 
     def evaluate(self,batch):
-        rep_steps = 1
-        rr,hits_10 = (0.0,0.0)
-        pos = self.model.predict(batch,None).cpu().data.numpy()
-        ind = 0
-        start = time.time()
-        for ex, p in zip(batch, pos):
-            s_rank,t_rank = self.compute_metrics(p,ex)
-            rr,hits_10 = self.metrics(s_rank,rr,hits_10,ind)
-            ind += 1
-            rr, hits_10 = self.metrics(t_rank, rr, hits_10, ind)
-            ind += 1
-            if ind % (rep_steps*2) == 0:
-                end = time.time()
-                secs = (end - start)
-                stdout.write("\rSpeed {} qps. Percentage complete {}, MRR {}, HITS@10 {} ".
-                             format(rep_steps / float(secs), 0.5*ind/float(len(batch)) * 100,rr,hits_10))
-                stdout.flush()
-                start = time.time()
-        self.write_ranks()
-        return rr, hits_10
+        s_negs = self.ns.batch_sample(batch, False)
+        t_negs = self.ns.batch_sample(batch, True)
+        s_scores = self.model.predict(batch, s_negs, False,is_pad=True).data.cpu().numpy()
+        t_scores = self.model.predict(batch, t_negs, True,is_pad=True).data.cpu().numpy()
+        ranks = util.ranks(s_scores, ascending=False) +  util.ranks(t_scores, ascending=False)
+        self.all_ranks.extend(ranks)
+        #self.write_ranks()
+        hits_10 = len([x for x in ranks if x <= 10]) / float(len(ranks))
+        rr = 1./np.asarray(ranks)
+        return np.mean(rr),hits_10
 
     def write_ranks(self):
         all_ranks = [str(x) for x in self.all_ranks]
         with open(os.path.join(self.results_dir, 'ranks_checkpoint'), 'w') as f:
             f.write("\n".join(all_ranks))
 
-    def metrics(self,rank,rr,hits_10,ind):
-        rr = (rr * ind + 1.0 / float(rank)) / float(ind + 1)
-        h_10 = 1.0 if rank <= 10 else 0.0
-        hits_10 = (hits_10 * ind + h_10) / float(ind + 1)
-        self.all_ranks.append(rank)
-        return rr,hits_10
 
 
-    def compute_metrics(self,pos,ex):
-
-        def calc_scores(batches):
-            scores = []
-            for b in batches:
-                scores.extend(self.model.predict(b,None).cpu().data.numpy().tolist())
-            scores.insert(0,pos)
-            assert pos == scores[0]
-            scores = np.asarray(scores)
-            rank = util.ranks(np.reshape(scores,(1,-1)), ascending=False)
-            return rank
-
-        s_negs= self.ns.sample(ex,False)
-        t_negs = self.ns.sample(ex,True)
-        s_negs  = self.pack_negs(ex, s_negs,False)
-        t_negs  = self.pack_negs(ex, t_negs, True)
-        negs_s = util.chunk(s_negs,constants.test_batch_size)
-        negs_t = util.chunk(t_negs, constants.test_batch_size)
-        s_rank = calc_scores(negs_s)
-        t_rank = calc_scores(negs_t)
-        return s_rank,t_rank
-
-    def pack_negs(self,ex,negs,is_target):
-        batch = []
-        for n in negs:
-            p = Path(ex.s,ex.r,n) if is_target else Path(n,ex.r,ex.t)
-            batch.append(p)
-
-        return batch

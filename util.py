@@ -24,9 +24,9 @@ def ranks(scores, ascending = False):
     sign = 1 if ascending else -1
     scores = scores * sign
     ranks = [stats.rankdata(scores[i])[0] for i in range(scores.shape[0])]
-    return np.mean(ranks)
+    return ranks
 
-def get_triples(batch,negs,is_target=True, volatile=False):
+def get_triples(batch,negs,is_target=True, volatile=False,is_pad=False):
     sources,rels,targets = ([],[],[])
     if negs is None:
         for ex in batch:
@@ -39,6 +39,11 @@ def get_triples(batch,negs,is_target=True, volatile=False):
             t = [n for n in negs[count]] if is_target else []
             s.insert(0,ex.s)
             t.insert(0,ex.t)
+            if is_pad:
+                if is_target:
+                    t = pad_arr(t,t[-1])
+                else:
+                    s = pad_arr(s,s[-1])
             sources.append(s)
             targets.append(t)
             rels.append(ex.r)
@@ -53,3 +58,11 @@ def to_var(x,volatile=False):
     if cuda:
         return var.cuda()
     return var
+
+def pad_arr(arr,val):
+    if len(arr)>=14951:
+        return arr
+    else:
+        zeros = [val]*(14951-len(arr))
+        arr.extend(zeros)
+        return arr

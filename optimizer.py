@@ -6,7 +6,6 @@ import torch
 from torch.optim import Adam
 import os
 from torch import nn
-from sys import stdout
 
 class SGD(object):
     def __init__(self,train,dev,model,negative_sampler,evaluator,results_dir,config):
@@ -32,14 +31,15 @@ class SGD(object):
         self.num_epochs = config.get('num_epochs',constants.num_epochs)
 
         self.report_steps = constants.report_steps
-        self.save_epochs = constants.save_epochs
+        self.test_batch_size = config.get('test_batch_size',constants.test_batch_size)
         self.halt = False
 
         self.prev_steps = 0
         self.prev_time = time.time()
 
         #Loss
-        self.criterion = nn.MultiMarginLoss()
+        self.mm = nn.MultiMarginLoss()
+        self.logistic = nn.MultiLabelSoftMarginLoss()
 
 
     def minimize(self):
@@ -74,12 +74,21 @@ class SGD(object):
         s_score = self.model(*s_batch)
         t_score = self.model(*t_batch)
         # score at index 0 is positive
-        y = util.to_var(np.zeros(len(batch), dtype='int64'),volatile=volatile)
-        loss = self.criterion(s_score,y) + self.criterion(t_score,y)
+        if self.model_name=='transE':
+            y = util.to_var(np.zeros(len(batch), dtype='int64'),volatile=volatile)
+            loss = self.mm(s_score,y) + self.mm(t_score,y)
+        else:
+            loss = self.nll_criterion(s_score,volatile) + self.nll_criterion(t_score,volatile)
         return loss
 
+    def nll_criterion(self,scores,volatile):
+        y = np.zeros(scores.size(),dtype='float32')
+        y[:,0] = 1
+        y = util.to_var(y,volatile=volatile)
+        return self.logistic(scores,y)
+
     def save(self):
-        curr_score = self.evaluate(self.dev, True,num_samples=5*constants.test_batch_size)
+        curr_score = self.evaluate(self.dev,self.test_batch_size,True)
         print("Current Score: {}, Previous Score: {}".format(curr_score,self.prev_score))
         if self.evaluator.comparator(curr_score, self.prev_score):
             print("Saving params...")
@@ -107,26 +116,20 @@ class SGD(object):
         train_obj = self.eval_obj(self.train)
         dev_obj = self.eval_obj(self.dev)
         obj_rep = "Train Obj: {:.3f}, Dev Obj: {:.3f}".format(train_obj[0], dev_obj[0])
-        # Performance
-        #train_val = self.evaluate(self.train, sample=True)
-        #dev_val = self.evaluate(self.dev, sample=True)
-        #metric = self.evaluator.metric_name
-        #eval_rep = "Train {} {:.3f}, Dev {} {:.3f}".format(metric, train_val, metric, dev_val)
         print("{},{},{}".format(norm_rep, speed_rep,obj_rep))
-        #stdout.write("{},{},{}, {}".format(norm_rep, speed_rep, obj_rep, eval_rep))
-        #stdout.flush()
 
-    def evaluate(self,data,sample=True,num_samples=constants.test_batch_size):
+
+    def evaluate(self,data,num_samples,sample=True):
         if sample:
-            batch_size = np.minimum(num_samples, constants.test_batch_size)
+            batch_size = np.minimum(num_samples, self.test_batch_size)
             samples = util.chunk(util.sample(data,num_samples), batch_size)
         else:
-            samples = util.chunk(data, constants.test_batch_size)
+            samples = util.chunk(data, self.test_batch_size)
 
-        values = [self.evaluator.evaluate(s) for s in samples]
+        values = [self.evaluator.evaluate(s,num_negs=constants.num_dev_negs) for s in samples]
         return np.nanmean(values)
 
     def eval_obj(self,data):
-        samples = util.sample(data,constants.test_batch_size)
+        samples = util.sample(data,np.minimum(1000,self.test_batch_size))
         loss = self.fprop(samples, volatile=True).data.cpu().numpy()
         return loss

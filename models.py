@@ -15,9 +15,9 @@ class KGE(nn.Module):
     def forward(self,sources,targets,rels):
         raise NotImplementedError('Abstract method')
 
-    def predict(self, batch,negs=None,is_target=True):
+    def predict(self, batch,negs=None,is_target=True,is_pad=False):
         sources,targets, rels = util.get_triples(batch,negs,
-                                                 is_target=is_target,volatile=True)
+                                                 is_target=is_target,volatile=True,is_pad=is_pad)
         return self.forward(sources,targets,rels)
 
     def init(self):

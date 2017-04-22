@@ -6,17 +6,17 @@ rel_ind = 'relations.cpkl'
 
 
 '''SGD Batch Size'''
-batch_size = 1000
-test_batch_size = 1000
+batch_size = 4000
+test_batch_size = 5000
 
 '''Negatives'''
 num_train_negs = 10
-num_dev_negs = 200
+num_dev_negs = 100
 num_test_negs = float('inf')
 
 
 '''Report and Save model'''
-report_steps = 200
+report_steps = 20
 save_epochs = 1
 
 '''Early Stopping'''

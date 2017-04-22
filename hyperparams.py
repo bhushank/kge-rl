@@ -5,7 +5,8 @@ import constants
 def main():
     data = 'freebase'
     base = "/home/kotnis/data/neg_sampling/"
-    models = {'rescal','transE','distmult','complex'}
+    #models = {'rescal','transE','distmult','complex'}
+    models = {'rescal'}
     for model in models:
         create_json(model,data,base)
 
@@ -13,7 +14,7 @@ def create_json(model,data,base):
     path = base+"{}/experiment_specs/".format(data)
     exp_name = "{}".format(model) + "{}.json"
     config = create_config(model)
-    l2 = np.sort(np.random.uniform(1,4,size=4))
+    l2 = np.sort(np.random.uniform(2,4,size=4))
     count = 1
     for e in l2:
             config['l2'] = np.power(10,-e)

@@ -40,7 +40,7 @@ def train(config,exp_name,data_path,resume=False):
     json.dump(config,open(os.path.join(results_dir,'config.json'),'w'),
               sort_keys=True,separators=(',\n', ': '))
 
-    data_set = data_loader.read_dataset(data_path,results_dir,dev_mode=True)
+    data_set = data_loader.read_dataset(data_path,results_dir,dev_mode=True,max_examples=float('inf'))
     cuda = torch.cuda.is_available()
     is_dev = config['is_dev']
     print("\n***{} MODE***\n".format('DEV' if is_dev else 'TEST'))
@@ -51,8 +51,9 @@ def train(config,exp_name,data_path,resume=False):
                                               results_dir,data_set['num_ents'],data_set['num_rels'])
     model = is_gpu(model,cuda)
     if resume:
-        model.load_state_dict(
-            torch.load(os.path.join(results_dir, "{}_params.pt".format(config[model]))))
+        params_path = os.path.join(results_dir, '{}_params.pt'.format(config['model']))
+        model.load_state_dict(torch.load(params_path))
+
     sgd = optimizer.SGD(data_set['train'],data_set['dev'],model,
                         neg_sampler,evaluator,results_dir,config)
 
@@ -61,7 +62,10 @@ def train(config,exp_name,data_path,resume=False):
     end = time.time()
     hours = int((end-start)/ 3600)
     minutes = ((end-start) % 3600) / 60.
-    print("Finished Training! Took {} hours and {} minutes\n".format(hours,minutes))
+    profile_string = "Finished Training! Took {} hours and {} minutes\n".format(hours,minutes)
+    with open(os.path.join(results_dir,'train_time'),'w') as f:
+        f.write(profile_string+"Raw seconds {}\n".format(end-start))
+    print(profile_string)
 
 
 
@@ -88,10 +92,14 @@ def test(config,exp_name,data_path):
     model = is_gpu(model, cuda)
     model.load_state_dict(torch.load(params_path))
     model.eval()
-    evaluate(data_set['test'],evaluator,results_dir)
+    print("Filtered Setting")
+    evaluate(data_set['test'],evaluator,results_dir,is_dev,True)
+    if not is_dev:
+        print("Raw Setting")
+        evaluate(data_set['test'], evaluator, results_dir, is_dev, False)
 
 
-def evaluate(data,evaluater,results_dir):
+def evaluate(data,evaluater,results_dir,is_dev,filtered):
     print("Evaluating")
     h10,mrr = 0.0,0.0
     start = time.time()
@@ -99,8 +107,8 @@ def evaluate(data,evaluater,results_dir):
     for count,d in enumerate(util.chunk(data,constants.test_batch_size)):
         rr, hits_10 = evaluater.evaluate(d)
         h10 = (h10*count + hits_10)/float(count + 1)
-        mrr = (mrr*count + rr)/(count+1)
-        if count%report_period==0:
+        mrr = (mrr*count + rr)/float(count+1)
+        if count%report_period==0 and count!=0:
             end = time.time()
             secs = (end - start)
             speed = "Speed {} queries per second".format(report_period*constants.test_batch_size/float(secs))
@@ -110,10 +118,12 @@ def evaluate(data,evaluater,results_dir):
             start = time.time()
 
     print('Writing Results.')
+    split = 'dev' if is_dev else 'test'
+    filt = 'filt' if filtered else 'raw'
     all_ranks = [str(x) for x in evaluater.all_ranks]
-    with open(os.path.join(results_dir,'ranks'),'w') as f:
+    with open(os.path.join(results_dir,'ranks_{}_{}'.format(split,filt)),'w') as f:
         f.write("\n".join(all_ranks))
-    with open(os.path.join(results_dir,'results'),'w') as f:
+    with open(os.path.join(results_dir,'results_{}_{}'.format(split,filt)),'w') as f:
         f.write("Mean Reciprocal Rank : {:.4f}\nHITS@10 : {:.4f}\n".
                 format(mrr,h10))
 

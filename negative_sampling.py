@@ -31,7 +31,7 @@ class Random_Sampler(Negative_Sampler):
         self.t_filter = self._compute_filter(True)
         print("Neg. Sampler: Random, num_samples: {}, filtered: {}".format(num_samples,filtered))
 
-    def sample(self,ex,is_target):
+    def sample(self,ex,is_target,num_samples=0):
         samples = self._entity_set.copy()
         if self.filtered:
             known_candidates = self.t_filter[(ex.s, ex.r)] if is_target else self.s_filter[(ex.r, ex.t)]
@@ -42,12 +42,14 @@ class Random_Sampler(Negative_Sampler):
         if gold in samples:
             samples.remove(gold)
         assert len(samples) > 1
-        if self.num_samples==float('inf'):
+        num_samples = self.num_samples if num_samples < self.num_samples else num_samples
+        if num_samples==float('inf'):
+            assert len(samples)<=14950
             return list(samples)
-        samples = np.random.choice(list(samples), self.num_samples, replace=False).tolist()
+        samples = np.random.choice(list(samples), num_samples, replace=False).tolist()
         return samples
 
-    def batch_sample(self,batch,is_target):
+    def batch_sample(self,batch,is_target,num_samples=0):
         #Single Threaded #ToDO: Parallelize using multiproc
         batched_negs = [self.sample(ex,is_target) for ex in batch]
         return batched_negs
