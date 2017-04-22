@@ -14,7 +14,7 @@ import data_loader
 
 def main(exp_name,data_path,resume):
     config = json.load(open(os.path.join(data_path,'experiment_specs',"{}.json".format(exp_name))))
-    print( torch.__version__)
+    print("Pytorch Version {}".format(torch.__version__))
     operation = config.get('operation','train_test')
     if operation=='train':
         train(config,exp_name,data_path,resume)
@@ -103,12 +103,12 @@ def evaluate(data,evaluater,results_dir,is_dev,filtered):
     print("Evaluating")
     h10,mrr = 0.0,0.0
     start = time.time()
-    report_period = 10
+    report_period = 1
     for count,d in enumerate(util.chunk(data,constants.test_batch_size)):
         rr, hits_10 = evaluater.evaluate(d)
         h10 = (h10*count + hits_10)/float(count + 1)
         mrr = (mrr*count + rr)/float(count+1)
-        if count%report_period==0 and count!=0:
+        if count%report_period==0:
             end = time.time()
             secs = (end - start)
             speed = "Speed {} queries per second".format(report_period*constants.test_batch_size/float(secs))

@@ -50,6 +50,7 @@ class SGD(object):
             np.random.shuffle(train_cp)
             batches = util.chunk(train_cp, self.batch_size)
             for step,batch in enumerate(batches):
+                self.optim.zero_grad()
                 loss = self.fprop(batch)
                 loss.backward()
                 g_norm = torch.nn.utils.clip_grad_norm(self.model.parameters(), 3.0)
@@ -61,7 +62,7 @@ class SGD(object):
             end = time.time()
             mins = int(end - start)/60
             secs = int(end - start)%60
-            print("\nEpoch {}. Took {} minutes {} seconds".format(epoch+1,mins,secs))
+            print("Epoch {}. Took {} minutes {} seconds".format(epoch+1,mins,secs))
             self.save()
             if self.halt:
                 return
@@ -91,14 +92,14 @@ class SGD(object):
         curr_score = self.evaluate(self.dev,self.test_batch_size,True)
         print("Current Score: {}, Previous Score: {}".format(curr_score,self.prev_score))
         if self.evaluator.comparator(curr_score, self.prev_score):
-            print("Saving params...")
+            print("Saving params...\n")
             torch.save(self.model.state_dict(), os.path.join(self.results_dir,'{}_params.pt'.format(self.model_name)))
             self.prev_score = curr_score
             # Reset early stop counter
             self.early_stop_counter = self.patience
         else:
             self.early_stop_counter -= 1
-            print("New params worse than current, skip saving...")
+            print("New params worse than current, skip saving...\n")
 
         if self.early_stop_counter <= 0:
             self.halt = True
@@ -108,14 +109,14 @@ class SGD(object):
         # Profiler
         secs = time.time() - self.prev_time
         num_steps = step - self.prev_steps
-        speed = num_steps / float(secs)
+        speed = num_steps*self.batch_size / float(secs)
         self.prev_steps = step
         self.prev_time = time.time()
-        speed_rep = "Speed: {:.2f} steps/sec".format(speed)
+        speed_rep = "Speed: {:.3f} steps/sec".format(speed)
         # Objective
         train_obj = self.eval_obj(self.train)
         dev_obj = self.eval_obj(self.dev)
-        obj_rep = "Train Obj: {:.3f}, Dev Obj: {:.3f}".format(train_obj[0], dev_obj[0])
+        obj_rep = "Train Obj: {:.4f}, Dev Obj: {:.4f}".format(train_obj[0], dev_obj[0])
         print("{},{},{}".format(norm_rep, speed_rep,obj_rep))
 
 
@@ -126,7 +127,7 @@ class SGD(object):
         else:
             samples = util.chunk(data, self.test_batch_size)
 
-        values = [self.evaluator.evaluate(s,num_negs=constants.num_dev_negs) for s in samples]
+        values = [self.evaluator.evaluate(s,num_negs=0) for s in samples]
         return np.nanmean(values)
 
     def eval_obj(self,data):

@@ -51,7 +51,7 @@ class Random_Sampler(Negative_Sampler):
 
     def batch_sample(self,batch,is_target,num_samples=0):
         #Single Threaded #ToDO: Parallelize using multiproc
-        batched_negs = [self.sample(ex,is_target) for ex in batch]
+        batched_negs = [self.sample(ex,is_target,num_samples) for ex in batch]
         return batched_negs
 
     def _compute_filter(self,is_target):

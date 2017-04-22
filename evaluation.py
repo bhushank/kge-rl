@@ -26,7 +26,7 @@ class RankEvaluator(Evaluator):
         # write if curr_score less than prev_score
         return curr_score < prev_score + self.tol
 
-    def evaluate(self,batch,num_negs=0):
+    def evaluate(self,batch,num_negs=constants.num_dev_negs):
         s_negs = self.ns.batch_sample(batch, False,num_negs)
         t_negs = self.ns.batch_sample(batch, True,num_negs)
         s_scores = self.model.predict(batch,s_negs, False).data.cpu().numpy()
@@ -41,7 +41,6 @@ class TestEvaluator(Evaluator):
         super(TestEvaluator,self).__init__(model,neg_sampler)
         self.all_ranks = []
         self.results_dir =results_dir
-
 
     def evaluate(self,batch):
         s_negs = self.ns.batch_sample(batch, False)
