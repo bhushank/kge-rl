@@ -20,7 +20,7 @@ class RankEvaluator(Evaluator):
         super(RankEvaluator,self).__init__(model,neg_sampler)
         self.init_score = float('inf') # because lower the better
         self.metric_name = "Mean Rank"
-        self.tol = 0.1
+        self.tol = 0.0
 
     def comparator(self,curr_score,prev_score):
         # write if curr_score less than prev_score
@@ -31,9 +31,9 @@ class RankEvaluator(Evaluator):
         t_negs = self.ns.batch_sample(batch, True)
         s_scores = self.model.predict(batch,s_negs, False).data.cpu().numpy()
         t_scores = self.model.predict(batch, t_negs,True).data.cpu().numpy()
-        s_ranks = util.ranks(s_scores, ascending=False)
-        t_ranks = util.ranks(t_scores, ascending=False)
-        return (np.mean(s_ranks) + np.mean(t_ranks))/2.
+        s_rank = util.ranks(s_scores, ascending=False)
+        t_rank = util.ranks(t_scores, ascending=False)
+        return (s_rank + t_rank)/2.
 
 
 class TestEvaluator(Evaluator):
@@ -44,7 +44,7 @@ class TestEvaluator(Evaluator):
 
 
     def evaluate(self,batch):
-        rep_steps = 10
+        rep_steps = 1
         rr,hits_10 = (0.0,0.0)
         pos = self.model.predict(batch,None).cpu().data.numpy()
         ind = 0
@@ -84,14 +84,14 @@ class TestEvaluator(Evaluator):
             scores = []
             for b in batches:
                 scores.extend(self.model.predict(b,None).cpu().data.numpy().tolist())
-            scores.append(pos)
-            assert pos == scores[-1]
+            scores.insert(0,pos)
+            assert pos == scores[0]
             scores = np.asarray(scores)
-            ranks = util.ranks(scores.ravel(), ascending=False)
-            return ranks[-1]
+            rank = util.ranks(np.reshape(scores,(1,-1)), ascending=False)
+            return rank
 
-        s_negs= self.ns.bordes_negs(ex,False)
-        t_negs = self.ns.bordes_negs(ex,True)
+        s_negs= self.ns.sample(ex,False)
+        t_negs = self.ns.sample(ex,True)
         s_negs  = self.pack_negs(ex, s_negs,False)
         t_negs  = self.pack_negs(ex, t_negs, True)
         negs_s = util.chunk(s_negs,constants.test_batch_size)

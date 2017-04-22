@@ -29,7 +29,7 @@ class Random_Sampler(Negative_Sampler):
         self.filtered = filtered
         self.s_filter = self._compute_filter(False)
         self.t_filter = self._compute_filter(True)
-        print("Neg. Sampler: Random, num_samples {}, filtered:{}".format(num_samples,filtered))
+        print("Neg. Sampler: Random, num_samples: {}, filtered: {}".format(num_samples,filtered))
 
     def sample(self,ex,is_target):
         samples = self._entity_set.copy()
@@ -42,7 +42,9 @@ class Random_Sampler(Negative_Sampler):
         if gold in samples:
             samples.remove(gold)
         assert len(samples) > 1
-        samples = np.random.choice(list(samples), self.num_samples, replace=False)
+        if self.num_samples==float('inf'):
+            return list(samples)
+        samples = np.random.choice(list(samples), self.num_samples, replace=False).tolist()
         return samples
 
     def batch_sample(self,batch,is_target):

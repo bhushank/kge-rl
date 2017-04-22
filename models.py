@@ -6,7 +6,7 @@ class KGE(nn.Module):
     def __init__(self,n_ents,n_rels,ent_dim,rel_dim,max_norm=False):
         super(KGE,self).__init__()
         if max_norm:
-            self.entities = nn.Embedding(n_ents,ent_dim,max_norm=1)
+            self.entities = nn.Embedding(n_ents,ent_dim,max_norm=1.0)
         else:
             self.entities = nn.Embedding(n_ents, ent_dim)
 
@@ -15,8 +15,9 @@ class KGE(nn.Module):
     def forward(self,sources,targets,rels):
         raise NotImplementedError('Abstract method')
 
-    def predict(self, batch):
-        sources,targets, rels = util.get_triples(batch,None, volatile=True)
+    def predict(self, batch,negs=None,is_target=True):
+        sources,targets, rels = util.get_triples(batch,negs,
+                                                 is_target=is_target,volatile=True)
         return self.forward(sources,targets,rels)
 
     def init(self):
@@ -46,13 +47,13 @@ class Rescal(KGE):
     def forward(self,sources,targets,rels):
         sources = self.entities(sources)
         targets = self.entities(targets)
-        rels = self.relations(rels)
+        rels = self.rels(rels)
         #Reshape rels
         rels = rels.view(-1,self.dim,self.dim)
         #score = x_s^T W_r x_t
-        out = torch.bmm(torch.transpose(sources,1,2),torch.bmm(rels,targets))
+        out = torch.bmm(torch.bmm(sources,rels),torch.transpose(targets,1,2))
         # First element is positive, rest are negatives
-        out = out.view(-1,out.size[1]*out.size[2])
+        out = out.view(-1,out.size()[1]*out.size()[2])
         return out
 
 class TransE(KGE):
@@ -63,7 +64,7 @@ class TransE(KGE):
     def forward(self,sources,targets,rels):
         sources = self.entities(sources)
         targets = self.entities(targets)
-        rels = self.relations(rels)
+        rels = self.rels(rels)
         sources,targets,rels = self.broadcast(sources,targets,rels)
         # score = -||x_s + x_r - x_t||_2
         return torch.neg(torch.norm(sources + rels - targets))
@@ -76,7 +77,7 @@ class Distmult(KGE):
     def forward(self, sources, targets, rels):
         sources = self.entities(sources)
         targets = self.entities(targets)
-        rels = self.relations(rels)
+        rels = self.rels(rels)
         sources, targets, rels = self.broadcast(sources, targets, rels)
         # score = x_s^T Diag(W_r) x_t
         return self.inner_prod(sources,targets,rels)
@@ -86,14 +87,14 @@ class ComplEx(KGE):
     def __init__(self, n_ents, n_rels, ent_dim):
         super(ComplEx, self).__init__(n_ents, n_rels, ent_dim, ent_dim,max_norm=True)
         self.entities_i = nn.Embedding(n_ents,ent_dim,max_norm=1)
-        self.relations_i = nn.Embedding(n_rels,ent_dim)
+        self.rels_i = nn.Embedding(n_rels,ent_dim)
         print("Initializing ComplEx model")
 
     def init(self):
         self.entities.weight.data.uniform_(-0.1, 0.1)
-        self.relations.weight.data.uniform_(-0.1, 0.1)
+        self.rels.weight.data.uniform_(-0.1, 0.1)
         self.entities_i.weight.data.uniform_(-0.1, 0.1)
-        self.relations_i.weight.data.uniform_(-0.1, 0.1)
+        self.rels_i.weight.data.uniform_(-0.1, 0.1)
 
 
     def forward(self,sources,targets,rels):

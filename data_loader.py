@@ -9,13 +9,11 @@ class Index(object):
 
     def rel_to_ind(self, rel):
         if rel not in self._rel_index:
-            print("Warning: Key {} not in index".format(rel))
             self._rel_index[rel] = len(self._rel_index.keys())
         return self._rel_index[rel]
 
     def ent_to_ind(self, ent):
         if ent not in self._ent_index:
-            print("Warning: Key {} not in index".format(ent))
             self._ent_index[ent] = len(self._ent_index.keys())
         return self._ent_index[ent]
 

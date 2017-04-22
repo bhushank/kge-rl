@@ -72,7 +72,7 @@ def test(config,exp_name,data_path):
     cuda =  torch.cuda.is_available()
     print("\n***{} MODE***\n".format('DEV' if is_dev else 'TEST'))
     results_dir = os.path.join(data_path, exp_name)
-    params_path = os.path.join(data_path,exp_name,'{}_params.pt'.format(config['model']))
+    params_path = os.path.join(results_dir,'{}_params.pt'.format(config['model']))
     if not os.path.exists(params_path):
         print("No trained params found, quitting.")
         return
@@ -84,11 +84,9 @@ def test(config,exp_name,data_path):
         all_data.extend(data_set['test'])
 
     model,neg_sampler,evaluator = build_model(all_data,config,results_dir,
-                                              data_set['num_ents'],data_set['num_rels'])
+                                              data_set['num_ents'],data_set['num_rels'],train=False)
     model = is_gpu(model, cuda)
-    model.load_state_dict(
-        torch.load(os.path.join(results_dir, "{}_params.pt".format(config[model]))))
-
+    model.load_state_dict(torch.load(params_path))
     model.eval()
     evaluate(data_set['test'],evaluator,results_dir)
 
@@ -120,7 +118,7 @@ def evaluate(data,evaluater,results_dir):
                 format(mrr,h10))
 
 
-def build_model(triples,config,results_dir,n_ents,n_rels):
+def build_model(triples,config,results_dir,n_ents,n_rels,train=True):
 
     def get_model():
         if config['model']=='rescal':
@@ -135,7 +133,7 @@ def build_model(triples,config,results_dir,n_ents,n_rels):
             raise NotImplementedError("Model {} not implemented".format(config['model']))
 
     def  get_neg_sampler():
-        if not config['is_dev']:
+        if not train:
             return negative_sampling.Random_Sampler(triples,float('inf'),filtered=True)
         if config['neg_sampler'] == 'random':
             return negative_sampling.Random_Sampler(triples,config['num_negs'])
@@ -144,7 +142,7 @@ def build_model(triples,config,results_dir,n_ents,n_rels):
 
     model = get_model()
     ns = get_neg_sampler()
-    evaluator = RankEvaluator(model,ns) if config['is_dev'] \
+    evaluator = RankEvaluator(model,ns) if train \
         else TestEvaluator(model,ns,results_dir)
     return model,ns,evaluator
 

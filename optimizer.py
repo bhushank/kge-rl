@@ -22,8 +22,8 @@ class SGD(object):
         lr = config.get('lr',0.001)
         l2 = config.get('l2',0.0)
         self.batch_size = config.get('batch_size',constants.batch_size)
-        print("lr:{:.3f}, l2:{:.3f}, batch_size:{}".format(lr,l2,self.batch_size))
-        self.optimizer = Adam(lr=lr,weight_decay=l2)
+        print("lr: {:.4f}, l2: {:.5f}, batch_size: {}".format(lr,l2,self.batch_size))
+        self.optim = Adam(model.parameters(),lr=lr,weight_decay=l2)
 
         #Report and Early Stopping Params
         self.prev_score = evaluator.init_score
@@ -45,6 +45,7 @@ class SGD(object):
     def minimize(self):
         print("Training...")
         for epoch in range(self.num_epochs):
+            start = time.time()
             train_cp = list(self.train)
             np.random.shuffle(train_cp)
             batches = util.chunk(train_cp, self.batch_size)
@@ -52,13 +53,15 @@ class SGD(object):
                 loss = self.fprop(batch)
                 loss.backward()
                 g_norm = torch.nn.utils.clip_grad_norm(self.model.parameters(), 3.0)
-                self.optimizer.step()
-                if step % self.report_steps == 0:
+                self.optim.step()
+                if step % self.report_steps == 0 and step!=0:
                     self.report(step,g_norm)
-
             self.prev_steps=0
             self.prev_time=time.time()
-            print("Number of Epochs {}".format(epoch))
+            end = time.time()
+            mins = int(end - start)/60
+            secs = int(end - start)%60
+            print("\nEpoch {}. Took {} minutes {} seconds".format(epoch+1,mins,secs))
             self.save()
             if self.halt:
                 return
@@ -71,12 +74,13 @@ class SGD(object):
         s_score = self.model(*s_batch)
         t_score = self.model(*t_batch)
         # score at index 0 is positive
-        y = util.to_var(np.zeros(len(batch), dtype='float32'),volatile=volatile)
+        y = util.to_var(np.zeros(len(batch), dtype='int64'),volatile=volatile)
         loss = self.criterion(s_score,y) + self.criterion(t_score,y)
         return loss
 
     def save(self):
         curr_score = self.evaluate(self.dev, True,num_samples=5*constants.test_batch_size)
+        print("Current Score: {}, Previous Score: {}".format(curr_score,self.prev_score))
         if self.evaluator.comparator(curr_score, self.prev_score):
             print("Saving params...")
             torch.save(self.model.state_dict(), os.path.join(self.results_dir,'{}_params.pt'.format(self.model_name)))
@@ -104,12 +108,13 @@ class SGD(object):
         dev_obj = self.eval_obj(self.dev)
         obj_rep = "Train Obj: {:.3f}, Dev Obj: {:.3f}".format(train_obj[0], dev_obj[0])
         # Performance
-        train_val = self.evaluate(self.train, sample=True)
-        dev_val = self.evaluate(self.dev, sample=True)
-        metric = self.evaluator.metric_name
-        eval_rep = "Train {} {:.3f}, Dev {} {:.3f}".format(metric, train_val, metric, dev_val)
-        stdout.write("{},{},{}, {}".format(norm_rep, speed_rep, obj_rep, eval_rep))
-        stdout.flush()
+        #train_val = self.evaluate(self.train, sample=True)
+        #dev_val = self.evaluate(self.dev, sample=True)
+        #metric = self.evaluator.metric_name
+        #eval_rep = "Train {} {:.3f}, Dev {} {:.3f}".format(metric, train_val, metric, dev_val)
+        print("{},{},{}".format(norm_rep, speed_rep,obj_rep))
+        #stdout.write("{},{},{}, {}".format(norm_rep, speed_rep, obj_rep, eval_rep))
+        #stdout.flush()
 
     def evaluate(self,data,sample=True,num_samples=constants.test_batch_size):
         if sample:
