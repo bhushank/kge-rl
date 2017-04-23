@@ -135,7 +135,7 @@ class SGD(object):
         else:
             samples = util.chunk(data, self.test_batch_size)
 
-        values = [self.evaluator.evaluate(s,num_negs=0) for s in samples]
+        values = [self.evaluator.evaluate(s,num_negs=constants.num_dev_negs) for s in samples]
         return np.nanmean(values)
 
     def eval_obj(self,data):

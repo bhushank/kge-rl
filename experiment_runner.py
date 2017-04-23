@@ -33,12 +33,14 @@ def train_test(config,exp_name,data_path,resume=False):
 def train(config,exp_name,data_path,resume=False):
 
     results_dir =  os.path.join(data_path,exp_name)
-    if os.path.exists(results_dir):
+    if os.path.exists(results_dir) and not resume:
         print("{} already exists, no need to train.\n".format(results_dir))
         return
-    os.makedirs(results_dir)
-    json.dump(config,open(os.path.join(results_dir,'config.json'),'w'),
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+        json.dump(config,open(os.path.join(results_dir,'config.json'),'w'),
               sort_keys=True,separators=(',\n', ': '))
+
     is_dev = config['is_dev']
     print("\n***{} MODE***\n".format('DEV' if is_dev else 'TEST'))
     if not is_dev:
