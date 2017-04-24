@@ -25,7 +25,7 @@ class KGE(nn.Module):
         self.relations.weight.data.uniform_(-0.1, 0.1)
 
     def broadcast(self,sources,targets,rels):
-        # PyTorch does not support broadcasting
+        # PyTorch 0.1.11 does not support broadcasting
         if sources.size()[2] > rels.size()[2]:
             rels = rels.expand_as(sources)
             targets = targets.expand_as(sources)

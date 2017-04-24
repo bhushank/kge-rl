@@ -5,10 +5,11 @@ import constants
 import torch
 from torch.optim import Adam
 import os
+import cPickle as pickle
 from torch import nn
 
 class SGD(object):
-    def __init__(self,train,dev,model,negative_sampler,evaluator,results_dir,config):
+    def __init__(self,train,dev,model,negative_sampler,evaluator,results_dir,config,state=None):
         self.train = train
         self.dev = dev
         self.model = model
@@ -23,7 +24,8 @@ class SGD(object):
         self.batch_size = config.get('batch_size',constants.batch_size)
         print("lr: {:.4f}, l2: {:.5f}, batch_size: {}".format(lr,l2,self.batch_size))
         self.optim = Adam(model.parameters(),lr=lr,weight_decay=l2)
-
+        if state is not None:
+            self.optim.load_state_dict(state)
         #Report and Early Stopping Params
         self.prev_score = evaluator.init_score
         self.early_stop_counter = constants.early_stop_counter
@@ -53,7 +55,7 @@ class SGD(object):
                 self.optim.zero_grad()
                 loss = self.fprop(batch)
                 loss.backward()
-                g_norm = torch.nn.utils.clip_grad_norm(self.model.parameters(), 3.0)
+                g_norm = torch.nn.utils.clip_grad_norm(self.model.parameters(), 5.0)
                 self.optim.step()
                 if step % self.report_steps == 0 and step!=0:
                     self.report(step,g_norm)
@@ -102,6 +104,9 @@ class SGD(object):
         if self.evaluator.comparator(curr_score, self.prev_score):
             print("Saving params...\n")
             torch.save(self.model.state_dict(), os.path.join(self.results_dir,'{}_params.pt'.format(self.model_name)))
+            #Save Optimizer Gradient History for resuming training
+            state = self.optim.state_dict()
+            pickle.dump(state,open("{}__g_history.cpkl".format(self.model_name),'w'))
             self.prev_score = curr_score
             # Reset early stop counter
             self.early_stop_counter = self.patience
@@ -124,8 +129,8 @@ class SGD(object):
         # Objective
         train_obj = self.eval_obj(self.train)
         dev_obj = self.eval_obj(self.dev)
-        obj_rep = "Train Obj: {:.4f}, Dev Obj: {:.4f}".format(train_obj[0], dev_obj[0])
-        print("{},{},{}".format(norm_rep, speed_rep,obj_rep))
+        obj_rep = "Train Obj.: {:.4f}, Dev Obj: {:.4f}".format(train_obj[0], dev_obj[0])
+        print("{}, {}, {}".format(norm_rep, speed_rep,obj_rep))
 
 
     def evaluate(self,data,num_samples,sample=True):

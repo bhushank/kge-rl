@@ -11,6 +11,7 @@ import constants
 import copy
 import torch
 import data_loader
+import cPickle as pickle
 
 def main(exp_name,data_path,resume):
     config = json.load(open(os.path.join(data_path,'experiment_specs',"{}.json".format(exp_name))))
@@ -55,12 +56,14 @@ def train(config,exp_name,data_path,resume=False):
     model,neg_sampler,evaluator = build_model(data_set['train'],config,
                                               results_dir,data_set['num_ents'],data_set['num_rels'])
     model = is_gpu(model,cuda)
+    state = None
     if resume:
         params_path = os.path.join(results_dir, '{}_params.pt'.format(config['model']))
         model.load_state_dict(torch.load(params_path))
+        state = pickle.load(os.path.join(results_dir,'{}_g_history.cpkl'.format(config['model'])))
 
     sgd = optimizer.SGD(data_set['train'],data_set['dev'],model,
-                        neg_sampler,evaluator,results_dir,config)
+                        neg_sampler,evaluator,results_dir,config,state)
 
     start = time.time()
     sgd.minimize()
@@ -95,12 +98,17 @@ def test(config,exp_name,data_path):
     model,neg_sampler,evaluator = build_model(all_data,config,results_dir,
                                               data_set['num_ents'],data_set['num_rels'],train=False)
     model = is_gpu(model, cuda)
-    model.load_state_dict(torch.load(params_path))
+    state_dict = torch.load(params_path) if cuda \
+        else torch.load(params_path, map_location=lambda storage, loc: storage)
+    model.load_state_dict(state_dict)
     model.eval()
     print("Filtered Setting")
     evaluate(data_set['test'],evaluator,results_dir,is_dev,True)
     if not is_dev:
         print("Raw Setting")
+        _,_, evaluator = build_model(all_data, config,
+                                     results_dir,data_set['num_ents'],
+                                     data_set['num_rels'], train=False,filtered=False)
         evaluate(data_set['test'], evaluator, results_dir, is_dev, False)
 
 
@@ -117,7 +125,7 @@ def evaluate(data,evaluater,results_dir,is_dev,filtered):
             end = time.time()
             secs = (end - start)
             speed = "Speed {} queries per second".format(report_period*constants.test_batch_size/float(secs))
-            qc = "Query Count : {}".format(count)
+            qc = "Query Count : {}".format((count + 1)*constants.test_batch_size)
             metrics ="Mean Reciprocal Rank : {:.4f}, HITS@10 : {:.4f}".format(mrr,h10)
             print ("{}, {}, {}".format(speed,qc,metrics))
             start = time.time()
@@ -133,7 +141,7 @@ def evaluate(data,evaluater,results_dir,is_dev,filtered):
                 format(mrr,h10))
 
 
-def build_model(triples,config,results_dir,n_ents,n_rels,train=True):
+def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=True):
 
     def get_model():
         if config['model']=='rescal':
@@ -149,7 +157,7 @@ def build_model(triples,config,results_dir,n_ents,n_rels,train=True):
 
     def  get_neg_sampler():
         if not train:
-            return negative_sampling.Random_Sampler(triples,float('inf'),filtered=True)
+            return negative_sampling.Random_Sampler(triples,float('inf'),filtered=filtered)
         if config['neg_sampler'] == 'random':
             return negative_sampling.Random_Sampler(triples,config['num_negs'])
         else:
