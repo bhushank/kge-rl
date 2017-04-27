@@ -5,6 +5,7 @@ import constants
 import torch
 from torch.optim import Adam
 import os
+import gzip
 import cPickle as pickle
 from torch import nn
 
@@ -55,7 +56,7 @@ class SGD(object):
                 self.optim.zero_grad()
                 loss = self.fprop(batch)
                 loss.backward()
-                g_norm = torch.nn.utils.clip_grad_norm(self.model.parameters(), 5.0)
+                g_norm = torch.nn.utils.clip_grad_norm(self.model.parameters(), 100.0)
                 self.optim.step()
                 if step % self.report_steps == 0 and step!=0:
                     self.report(step,g_norm)
@@ -64,7 +65,7 @@ class SGD(object):
             end = time.time()
             mins = int(end - start)/60
             secs = int(end - start)%60
-            print("Epoch {}. Took {} minutes {} seconds".format(epoch+1,mins,secs))
+            print("Epoch {} took {} minutes {} seconds".format(epoch+1,mins,secs))
             self.save()
             if self.halt:
                 return
@@ -103,10 +104,11 @@ class SGD(object):
         print("Current Score: {}, Previous Score: {}".format(curr_score,self.prev_score))
         if self.evaluator.comparator(curr_score, self.prev_score):
             print("Saving params...\n")
-            torch.save(self.model.state_dict(), os.path.join(self.results_dir,'{}_params.pt'.format(self.model_name)))
+            torch.save(self.model.state_dict(), os.path.join(
+                self.results_dir,'{}_params.pt'.format(self.model_name)))
             #Save Optimizer Gradient History for resuming training
-            state = self.optim.state_dict()
-            pickle.dump(state,open("{}__g_history.cpkl".format(self.model_name),'w'))
+            state_path = os.path.join(self.results_dir,"{}_optim_state.pt".format(self.model_name))
+            torch.save(self.optim.state_dict(),state_path)
             self.prev_score = curr_score
             # Reset early stop counter
             self.early_stop_counter = self.patience
@@ -140,7 +142,7 @@ class SGD(object):
         else:
             samples = util.chunk(data, self.test_batch_size)
 
-        values = [self.evaluator.evaluate(s,num_negs=constants.num_dev_negs) for s in samples]
+        values = [self.evaluator.evaluate(s) for s in samples]
         return np.nanmean(values)
 
     def eval_obj(self,data):

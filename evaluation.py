@@ -1,9 +1,6 @@
 import util
 import numpy as np
-import time
 import os
-from data_loader import Path
-from sys import stdout
 import constants
 
 class Evaluator(object):
@@ -26,9 +23,9 @@ class RankEvaluator(Evaluator):
         # write if curr_score less than prev_score
         return curr_score < prev_score + self.tol
 
-    def evaluate(self,batch,num_negs=constants.num_dev_negs):
-        s_negs = self.ns.batch_sample(batch, False,num_negs)
-        t_negs = self.ns.batch_sample(batch, True,num_negs)
+    def evaluate(self,batch):
+        s_negs = self.ns.batch_sample(batch, False)
+        t_negs = self.ns.batch_sample(batch, True)
         s_scores = self.model.predict(batch,s_negs, False).data.cpu().numpy()
         t_scores = self.model.predict(batch, t_negs,True).data.cpu().numpy()
         s_rank = np.mean(util.ranks(s_scores, ascending=False))

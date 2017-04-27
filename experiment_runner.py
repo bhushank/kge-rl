@@ -11,7 +11,6 @@ import constants
 import copy
 import torch
 import data_loader
-import cPickle as pickle
 
 def main(exp_name,data_path,resume):
     config = json.load(open(os.path.join(data_path,'experiment_specs',"{}.json".format(exp_name))))
@@ -52,15 +51,18 @@ def train(config,exp_name,data_path,resume=False):
 
     print("Number of training data points {}".format(len(data_set['train'])))
     print("Number of dev data points {}".format(len(data_set['test'])))
-
-    model,neg_sampler,evaluator = build_model(data_set['train'],config,
+    # Provide train and dev data to negative sampler for filtering positives
+    data = copy.copy(data_set['train'])
+    data.extend(data_set['test'])
+    model,neg_sampler,evaluator = build_model(data,config,
                                               results_dir,data_set['num_ents'],data_set['num_rels'])
     model = is_gpu(model,cuda)
     state = None
     if resume:
         params_path = os.path.join(results_dir, '{}_params.pt'.format(config['model']))
         model.load_state_dict(torch.load(params_path))
-        state = pickle.load(os.path.join(results_dir,'{}_g_history.cpkl'.format(config['model'])))
+        state_path = os.path.join(results_dir,'{}_optim_state.pt'.format(config['model']))
+        state = torch.load(state_path)
 
     sgd = optimizer.SGD(data_set['train'],data_set['dev'],model,
                         neg_sampler,evaluator,results_dir,config,state)
@@ -74,7 +76,6 @@ def train(config,exp_name,data_path,resume=False):
     with open(os.path.join(results_dir,'train_time'),'w') as f:
         f.write(profile_string+"Raw seconds {}\n".format(end-start))
     print(profile_string)
-
 
 
 def test(config,exp_name,data_path):
@@ -158,14 +159,19 @@ def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=Tru
     def  get_neg_sampler():
         if not train:
             return negative_sampling.Random_Sampler(triples,float('inf'),filtered=filtered)
-        if config['neg_sampler'] == 'random':
+        elif config['neg_sampler'] == 'random':
             return negative_sampling.Random_Sampler(triples,config['num_negs'])
+        elif config['neg_sampler'] == 'corrupt':
+            return negative_sampling.Corrupt_Sampler(triples,config['num_negs'])
+        elif config['neg_sampler'] == 'typed':
+            return negative_sampling.Typed_Sampler(triples,config['num_negs'],results_dir)
         else:
             raise NotImplementedError("Neg. Sampler {} not implemented".format(config['neg_sampler']))
 
     model = get_model()
     ns = get_neg_sampler()
-    evaluator = RankEvaluator(model,ns) if train \
+    eval_ns = negative_sampling.Random_Sampler(triples,constants.num_dev_negs)
+    evaluator = RankEvaluator(model,eval_ns) if train \
         else TestEvaluator(model,ns,results_dir)
     return model,ns,evaluator
 

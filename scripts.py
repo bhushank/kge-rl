@@ -1,10 +1,19 @@
-import numpy as np
+import time
 import util
-from torch.nn import SoftMarginLoss
+import negative_sampling
+import data_loader
+import multiprocessing as mp
+data_path = '/home/mitarb/kotnis/Data/neg_sampling/freebase/'
+results_dir = data_path + 'rescal_1/'
+def sample(ns,ex):
+    return ns.sample(ex,True)
 
+data = data_loader.read_dataset(data_path,results_dir,dev_mode=True,max_examples=float('inf'))
+ns  = negative_sampling.Random_Sampler(data['train'],100,filtered=False)
+batch = data['train'][:4000]
 
-logistic = SoftMarginLoss()
-score = util.to_var(-100*np.ones(1000),volatile=True)
-targets = util.to_var(np.ones(1000),volatile=True)
-loss = logistic(score,targets)
-print(loss.data.numpy())
+start = time.time()
+for ex in batch:
+    samples = sample(ns,ex)
+end = time.time()
+print("Single Process {}".format(end-start))
