@@ -3,6 +3,7 @@ import os
 import constants
 from sample_list import sample_list
 import cPickle as pickle
+from sklearn.neighbors import BallTree
 
 class Negative_Sampler(object):
     def __init__(self,triples,num_samples,filtered):
@@ -15,7 +16,6 @@ class Negative_Sampler(object):
         self.t_filter = self._compute_filter(True)
 
     def batch_sample(self, batch, is_target, num_samples=0):
-        # Single Threaded #ToDO: Parallelize using multiproc
         batched_negs = [self.sample(ex, is_target, num_samples) for ex in batch]
         return batched_negs
 
@@ -25,9 +25,7 @@ class Negative_Sampler(object):
     def filter_candidates(self,ex,is_target,candidates):
         if self.filtered:
             known_candidates = self.t_filter[(ex.s, ex.r)] if is_target else self.s_filter[(ex.r, ex.t)]
-            for e in known_candidates:
-                if e in candidates:
-                    candidates.remove(e)
+            candidates = candidates.difference(known_candidates)
         gold = ex.t if is_target else ex.s
         if gold in candidates:
             candidates.remove(gold)
@@ -161,3 +159,69 @@ class Typed_Sampler(Negative_Sampler):
         samples = sample_list(list(samples), num_samples)
         assert len(samples) >= 1
         return samples
+
+
+class Dynamic_Sampler(Negative_Sampler):
+    def __init__(self, triples, num_samples, model, filtered=True):
+        super(Dynamic_Sampler, self).__init__(triples, num_samples, filtered)
+        self.model = model
+        self.create_ball_tree()
+
+    def batch_sample(self, batch, is_target, num_samples=0):
+        raise NotImplementedError("Abstract Method")
+
+    def create_ball_tree(self):
+        entities = self.model.all_entity_vectors()
+        self.tree = BallTree(entities,leaf_size=entities.shape[0])
+
+    def sample(self,ex,is_target,entity_vector,num_samples=0):
+        num_samples = self.num_samples if num_samples <= 0 else num_samples
+        ind = self.tree.query([entity_vector], k=num_samples,return_distance=False)
+        samples = self.filter_candidates(ex,is_target,set(ind[0]))
+        curr_num = num_samples
+        while True:
+            if len(samples)==num_samples:
+                return list(samples)
+            diff = num_samples - len(samples)
+            ind = self.tree.query([entity_vector], k=curr_num+diff,return_distance=False)
+            ind = ind[0,curr_num:]
+            new_samples  = self.filter_candidates(ex,is_target,set(ind))
+            samples.update(new_samples)
+            curr_num += diff
+
+    def get_entity(self,ex,is_target):
+        return ex.t if is_target else ex.s
+
+class NN_Sampler(Dynamic_Sampler):
+    def __init__(self,triples,num_samples,model,filtered=True):
+        super(NN_Sampler,self).__init__(triples,num_samples,model,filtered)
+        print("Neg. Sampler: Nearest Neighbors, num_samples: {}, filtered: {}"
+              .format(num_samples, filtered))
+
+
+
+    def batch_sample(self, batch, is_target, num_samples=0):
+
+        entities = [self.get_entity(ex,is_target) for ex in batch]
+        entity_vectors = self.model.entity_vectors(entities)
+        batched_negs = [self.sample(ex, is_target,e_v,num_samples) for ex,e_v in zip(batch,entity_vectors)]
+        return batched_negs
+
+
+class Adversarial_Sampler(Dynamic_Sampler):
+    def __init__(self,triples,num_samples,model,filtered=True):
+        super(Adversarial_Sampler,self).__init__(triples,num_samples,model,filtered)
+        print("Neg. Sampler: Adversarial, num_samples: {}, filtered: {}"
+              .format(num_samples, filtered))
+
+    def batch_sample(self, batch, is_target, num_samples=0):
+        entities = []
+        rels = []
+        for ex in batch:
+            rels.append(ex.r)
+            # if is_target (predicting target), then should use sources
+            entities.append(self.get_entity(ex,not is_target))
+        entity_vectors = self.model.output(entities,rels,is_target)
+        batched_negs = [self.sample(ex, is_target, e_v, num_samples) for ex, e_v in zip(batch, entity_vectors)]
+        return batched_negs
+

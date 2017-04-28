@@ -5,6 +5,7 @@ import util
 class KGE(nn.Module):
     def __init__(self,n_ents,n_rels,ent_dim,rel_dim,max_norm=False):
         super(KGE,self).__init__()
+        self.num_ents = n_ents
         if max_norm:
             self.entities = nn.Embedding(n_ents,ent_dim,max_norm=1.0)
         else:
@@ -37,6 +38,16 @@ class KGE(nn.Module):
     def inner_prod(self,x,y,z):
         return torch.sum(torch.mul(torch.mul(x, y), z), 1)
 
+    def all_entity_vectors(self):
+        var = util.to_var(range(self.num_ents),volatile=True)
+        entities = self.entities(var).data.cpu().numpy()
+        return entities
+
+    def entity_vectors(self,ids):
+        var = util.to_var(ids,volatile=True)
+        vector = self.entities(var).data.cpu().numpy()
+        return vector
+
 class Rescal(KGE):
 
     def __init__(self,n_ents,n_rels,ent_dim):
@@ -55,6 +66,26 @@ class Rescal(KGE):
         # First element is positive, rest are negatives
         out = out.view(-1,out.size()[1]*out.size()[2])
         return out
+
+    def output(self,entities,rels,is_target):
+        '''
+        Given source and rels output the target or given target and rels output the source vector
+        :param entities: source or target entity ids
+        :param rels: rel ids
+        :param is_target: True for predicting targets
+        :return: 
+        '''
+        entities = self.entities(util.to_var(entities,True)).unsqueeze(2)
+        rels = self.rels(util.to_var(rels,True))
+        # Reshape rels
+        rels = rels.view(-1, self.dim, self.dim)
+        if is_target:
+            out = torch.bmm(torch.transpose(entities, 1, 2),rels)
+        else:
+            out = torch.bmm(rels, entities)
+        out = out.view(-1, out.size()[1] * out.size()[2])
+        return out.data.cpu().numpy()
+
 
 class TransE(KGE):
     def __init__(self, n_ents, n_rels, ent_dim):

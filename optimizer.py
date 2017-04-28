@@ -5,6 +5,7 @@ import constants
 import torch
 from torch.optim import Adam
 import os
+from negative_sampling import Dynamic_Sampler
 import gzip
 import cPickle as pickle
 from torch import nn
@@ -66,6 +67,9 @@ class SGD(object):
             mins = int(end - start)/60
             secs = int(end - start)%60
             print("Epoch {} took {} minutes {} seconds".format(epoch+1,mins,secs))
+            # Refresh
+            if isinstance(self.ns,Dynamic_Sampler):
+                return
             self.save()
             if self.halt:
                 return

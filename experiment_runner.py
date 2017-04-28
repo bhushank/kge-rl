@@ -12,34 +12,34 @@ import copy
 import torch
 import data_loader
 
-def main(exp_name,data_path,resume):
+def main(exp_name,data_path,resume,tune):
     config = json.load(open(os.path.join(data_path,'experiment_specs',"{}.json".format(exp_name))))
     print("Pytorch Version {}".format(torch.__version__))
     operation = config.get('operation','train_test')
     if operation=='train':
-        train(config,exp_name,data_path,resume)
+        train(config,exp_name,data_path,resume,tune)
     elif operation=='test':
         test(config,exp_name,data_path)
     elif operation=='train_test':
-        train_test(config,exp_name,data_path,resume)
+        train_test(config,exp_name,data_path,resume,tune)
     else:
         raise NotImplementedError("{} Operation Not Implemented".format(operation))
 
-def train_test(config,exp_name,data_path,resume=False):
-    train(config,exp_name,data_path,resume)
+def train_test(config,exp_name,data_path,resume=False,tune=False):
+    train(config,exp_name,data_path,resume,tune)
     test(config,exp_name,data_path)
 
 
-def train(config,exp_name,data_path,resume=False):
+def train(config,exp_name,data_path,resume=False,tune=False):
 
     results_dir =  os.path.join(data_path,exp_name)
-    if os.path.exists(results_dir) and not resume:
+    if os.path.exists(results_dir) and not (resume or tune):
         print("{} already exists, no need to train.\n".format(results_dir))
         return
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
-        json.dump(config,open(os.path.join(results_dir,'config.json'),'w'),
-              sort_keys=True,separators=(',\n', ': '))
+    json.dump(config,open(os.path.join(results_dir,'config.json'),'w'),
+            sort_keys=True,separators=(',\n', ': '))
 
     is_dev = config['is_dev']
     print("\n***{} MODE***\n".format('DEV' if is_dev else 'TEST'))
@@ -58,11 +58,12 @@ def train(config,exp_name,data_path,resume=False):
                                               results_dir,data_set['num_ents'],data_set['num_rels'])
     model = is_gpu(model,cuda)
     state = None
-    if resume:
+    if resume or tune:
         params_path = os.path.join(results_dir, '{}_params.pt'.format(config['model']))
         model.load_state_dict(torch.load(params_path))
-        state_path = os.path.join(results_dir,'{}_optim_state.pt'.format(config['model']))
-        state = torch.load(state_path)
+        if resume:
+            state_path = os.path.join(results_dir,'{}_optim_state.pt'.format(config['model']))
+            state = torch.load(state_path)
 
     sgd = optimizer.SGD(data_set['train'],data_set['dev'],model,
                         neg_sampler,evaluator,results_dir,config,state)
@@ -141,7 +142,6 @@ def evaluate(data,evaluater,results_dir,is_dev,filtered):
         f.write("Mean Reciprocal Rank : {:.4f}\nHITS@10 : {:.4f}\n".
                 format(mrr,h10))
 
-
 def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=True):
 
     def get_model():
@@ -156,7 +156,7 @@ def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=Tru
         else:
             raise NotImplementedError("Model {} not implemented".format(config['model']))
 
-    def  get_neg_sampler():
+    def  get_neg_sampler(model=None):
         if not train:
             return negative_sampling.Random_Sampler(triples,float('inf'),filtered=filtered)
         elif config['neg_sampler'] == 'random':
@@ -165,11 +165,15 @@ def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=Tru
             return negative_sampling.Corrupt_Sampler(triples,config['num_negs'])
         elif config['neg_sampler'] == 'typed':
             return negative_sampling.Typed_Sampler(triples,config['num_negs'],results_dir)
+        elif config['neg_sampler'] == 'nn':
+            return negative_sampling.NN_Sampler(triples,config['num_negs'],model)
+        elif config['neg_sampler'] == 'adversarial':
+            return negative_sampling.Adversarial_Sampler(triples, config['num_negs'], model)
         else:
             raise NotImplementedError("Neg. Sampler {} not implemented".format(config['neg_sampler']))
 
     model = get_model()
-    ns = get_neg_sampler()
+    ns = get_neg_sampler(model)
     eval_ns = negative_sampling.Random_Sampler(triples,constants.num_dev_negs)
     evaluator = RankEvaluator(model,eval_ns) if train \
         else TestEvaluator(model,ns,results_dir)
@@ -189,6 +193,7 @@ if __name__=='__main__':
     parser.add_argument('data_path')
     parser.add_argument('exp_name')
     parser.add_argument('-r', action='store_true')
+    parser.add_argument('-t', action='store_true')
     args = parser.parse_args()
-    main(args.exp_name,args.data_path,args.r)
+    main(args.exp_name,args.data_path,args.r,args.t)
 
