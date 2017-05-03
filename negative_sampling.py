@@ -56,11 +56,12 @@ class Negative_Sampler(object):
             filter[key] = candidates
         return filter
 
+
 class Random_Sampler(Negative_Sampler):
     def __init__(self,triples,num_samples,filtered=False):
         super(Random_Sampler,self).__init__(triples,num_samples,filtered)
 
-        print("Neg. Sampler: Random, num_samples: {}, filtered: {}".format(num_samples,filtered))
+        print("\tNeg. Sampler: Random, num_samples: {}, filtered: {}".format(num_samples,filtered))
 
     def sample(self,ex,is_target,num_samples=0):
         candidates = self._entity_set.copy()
@@ -74,13 +75,46 @@ class Random_Sampler(Negative_Sampler):
         assert len(samples) >= 1
         return samples
 
+class Static_Sampler(Negative_Sampler):
+    def __init__(self,triples,num_samples,filtered=True):
+        super(Static_Sampler,self).__init__(triples,num_samples,filtered)
+        print("Auxiliary Sampler:")
+        self.rs = Random_Sampler(triples,num_samples)
+        print("Primary Sampler:")
 
-class Corrupt_Sampler(Negative_Sampler):
+    def get_candidates(self,ex,is_target):
+        raise NotImplementedError()
+
+    def pad_samples(self,ex,samples, n,is_target):
+        while True:
+            if len(samples) == n:
+                break
+            new_samples = self.rs.sample(ex, is_target,n - len(samples))
+            samples.update(set(new_samples))
+        return list(samples)
+
+    def sample(self,ex,is_target,candidates,num_samples=0):
+        samples = self.filter_candidates(ex,is_target,candidates)
+        num_samples = self.num_samples if num_samples <= 0 else num_samples
+        # if corrupted negatives less than num_samples then augment with random samples
+        if num_samples >= len(samples):
+            return self.pad_samples(ex,samples,num_samples,is_target)
+        #samples = np.random.choice(list(samples), num_samples, replace=False).tolist()
+        # Cython code faster then np.random.choice()
+        samples = sample_list(list(samples),num_samples)
+        assert len(samples) >= 1
+        return samples
+
+    def batch_sample(self, batch, is_target, num_samples=0):
+        batched_negs = [self.sample(ex, is_target,self.get_candidates(ex,is_target), num_samples) for ex in batch]
+        return batched_negs
+
+
+class Corrupt_Sampler(Static_Sampler):
     def __init__(self,triples,num_samples,filtered=False):
         super(Corrupt_Sampler,self).__init__(triples,num_samples,filtered)
         self._typed_entities = self.get_typed()
-        print("Neg. Sampler: Corrupt, num_samples: {}, filtered: {}".format(num_samples, filtered))
-        self.rs = Random_Sampler(triples,num_samples)
+        print("\tNeg. Sampler: Corrupt, num_samples: {}, filtered: {}".format(num_samples, filtered))
 
     def get_typed(self):
         typed = dict()
@@ -92,34 +126,17 @@ class Corrupt_Sampler(Negative_Sampler):
         assert len(typed.keys())==constants.fb15k_rels
         return typed
 
+    def get_candidates(self,ex,is_target):
+        return self._typed_entities[ex.r][1] if is_target else self._typed_entities[ex.r][0]
 
-    def pad_samples(self,ex,samples, n,is_target):
-        while True:
-            if len(samples) == n:
-                break
-            new_samples = self.rs.sample(ex, is_target,n - len(samples))
-            samples.update(set(new_samples))
-        return list(samples)
 
-    def sample(self,ex,is_target,num_samples=0):
-        candidates = self._typed_entities[ex.r][1] if is_target else self._typed_entities[ex.r][0]
-        samples = self.filter_candidates(ex,is_target,candidates)
-        num_samples = self.num_samples if num_samples <= 0 else num_samples
-        # if corrupted negatives less than num_samples then augment with random samples
-        if num_samples >= len(samples):
-            return self.pad_samples(ex,samples,num_samples,is_target)
-        #samples = np.random.choice(list(samples), num_samples, replace=False).tolist()
-        samples = sample_list(list(samples),num_samples)
-        assert len(samples) >= 1
-        return samples
-
-class Typed_Sampler(Negative_Sampler):
+class Typed_Sampler(Static_Sampler):
     def __init__(self,triples,num_samples,results_dir,filtered=True):
         super(Typed_Sampler, self).__init__(triples,num_samples,filtered)
-        print("Neg. Sampler: Typed, num_samples: {}, filtered: {}".format(num_samples, filtered))
+        print("\tNeg. Sampler: Typed, num_samples: {}, filtered: {}".format(num_samples, filtered))
         self.ent_index = pickle.load(open(os.path.join(results_dir, constants.entity_ind)))
         self.ent_cats,self.cat_ents = self.load_cats()
-        self.rs = Random_Sampler(triples, num_samples)
+
 
     def load_cats(self):
         ent_cats, cat_ents = dict(),dict()
@@ -132,33 +149,44 @@ class Typed_Sampler(Negative_Sampler):
                 cat_ents[c] = ents
         return ent_cats,cat_ents
 
-    def pad_samples(self, ex, samples, n, is_target):
-        while True:
-            if len(samples) == n:
-                break
-            new_samples = self.rs.sample(ex, is_target, n - len(samples))
-            samples.update(set(new_samples))
-        return list(samples)
+    def get_candidates(self,ex,is_target):
+        candidates = set()
+        entity = ex.t if is_target else ex.s
+        cats = self.ent_cats.get(entity, set())
+        for c in cats:
+            candidates.update(self.cat_ents.get(c, set()))
+        return candidates
 
-    def sample(self, ex, is_target, num_samples=0):
-        def get_candidates():
-            candidates = set()
-            entity = ex.t if is_target else ex.s
-            cats = self.ent_cats.get(entity,set())
-            for c in cats:
-                candidates.update(self.cat_ents.get(c,set()))
-            return candidates
 
-        candidates = get_candidates()
-        samples = self.filter_candidates(ex, is_target, candidates)
-        num_samples = self.num_samples if num_samples <= 0 else num_samples
-        # if corrupted negatives less than num_samples then augment with random samples
-        if num_samples >= len(samples):
-            return self.pad_samples(ex, samples, num_samples, is_target)
-        #samples = np.random.choice(list(samples), num_samples, replace=False).tolist()
-        samples = sample_list(list(samples), num_samples)
-        assert len(samples) >= 1
-        return samples
+class Relational_Sampler(Static_Sampler):
+    def __init__(self,triples,num_samples,filtered=True):
+        super(Relational_Sampler,self).__init__(triples,num_samples,filtered)
+        print("\tNeg. Sampler: Relational, num_samples: {}, filtered: {}".format(num_samples, filtered))
+        self.ent_rels,self.rel_ents = self.process_triples()
+
+    def process_triples(self):
+        ent_rels, rel_ents = dict(),dict()
+        for ex in self._triples:
+            inv_rel = "_"+str(ex.r)
+            ent_rels.setdefault(ex.s,set()).add(ex.r)
+            ent_rels.setdefault(ex.t, set()).add(inv_rel)
+            rel_ents.setdefault(ex.r,set()).add(ex.t)
+            rel_ents.setdefault(inv_rel, set()).add(ex.s)
+        return ent_rels,rel_ents
+
+    def get_candidates(self,ex,is_target):
+        def is_inverse(r):
+            if is_target:
+                return '_' not in str(r) and r !=ex.r
+            return '_' in str(r) and r != "_"+str(ex.r)
+
+        rels = self.ent_rels[ex.s] if is_target else self.ent_rels[ex.t]
+        candidates = set()
+        for r in rels:
+            if is_inverse(r):
+                candidates.update(self.rel_ents[r])
+        return candidates
+
 
 
 class Dynamic_Sampler(Negative_Sampler):
@@ -195,9 +223,8 @@ class Dynamic_Sampler(Negative_Sampler):
 class NN_Sampler(Dynamic_Sampler):
     def __init__(self,triples,num_samples,model,filtered=True):
         super(NN_Sampler,self).__init__(triples,num_samples,model,filtered)
-        print("Neg. Sampler: Nearest Neighbors, num_samples: {}, filtered: {}"
+        print("\tNeg. Sampler: Nearest Neighbors, num_samples: {}, filtered: {}"
               .format(num_samples, filtered))
-
 
 
     def batch_sample(self, batch, is_target, num_samples=0):
@@ -211,7 +238,7 @@ class NN_Sampler(Dynamic_Sampler):
 class Adversarial_Sampler(Dynamic_Sampler):
     def __init__(self,triples,num_samples,model,filtered=True):
         super(Adversarial_Sampler,self).__init__(triples,num_samples,model,filtered)
-        print("Neg. Sampler: Adversarial, num_samples: {}, filtered: {}"
+        print("\tNeg. Sampler: Adversarial, num_samples: {}, filtered: {}"
               .format(num_samples, filtered))
 
     def batch_sample(self, batch, is_target, num_samples=0):
@@ -224,4 +251,6 @@ class Adversarial_Sampler(Dynamic_Sampler):
         entity_vectors = self.model.output(entities,rels,is_target)
         batched_negs = [self.sample(ex, is_target, e_v, num_samples) for ex, e_v in zip(batch, entity_vectors)]
         return batched_negs
+
+
 

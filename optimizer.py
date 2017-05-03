@@ -68,9 +68,10 @@ class SGD(object):
             secs = int(end - start)%60
             print("Epoch {} took {} minutes {} seconds".format(epoch+1,mins,secs))
             # Refresh
-            if isinstance(self.ns,Dynamic_Sampler):
-                return
             self.save()
+            if isinstance(self.ns,Dynamic_Sampler):
+                self.halt = True
+
             if self.halt:
                 return
 

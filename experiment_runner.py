@@ -165,6 +165,8 @@ def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=Tru
             return negative_sampling.Corrupt_Sampler(triples,config['num_negs'])
         elif config['neg_sampler'] == 'typed':
             return negative_sampling.Typed_Sampler(triples,config['num_negs'],results_dir)
+        elif config['neg_sampler'] == 'relational':
+            return negative_sampling.Relational_Sampler(triples,config['num_negs'])
         elif config['neg_sampler'] == 'nn':
             return negative_sampling.NN_Sampler(triples,config['num_negs'],model)
         elif config['neg_sampler'] == 'adversarial':
@@ -174,9 +176,12 @@ def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=Tru
 
     model = get_model()
     ns = get_neg_sampler(model)
-    eval_ns = negative_sampling.Random_Sampler(triples,constants.num_dev_negs)
-    evaluator = RankEvaluator(model,eval_ns) if train \
-        else TestEvaluator(model,ns,results_dir)
+    if train:
+        print('Evaluation Sampler')
+        eval_ns = negative_sampling.Random_Sampler(triples,constants.num_dev_negs)
+        evaluator = RankEvaluator(model,eval_ns)
+    else:
+        evaluator = TestEvaluator(model,ns,results_dir)
     return model,ns,evaluator
 
 def is_gpu(model,cuda):
