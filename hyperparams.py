@@ -6,11 +6,11 @@ def main():
     data = 'freebase'
     base = "/home/mitarb/kotnis/Data/neg_sampling/"
     #models = {'rescal','transE','distmult','complex'}
-    models = {'rescal'}
-    l2 = 0.0002084 # from hyper-param tuning
+    models = {'transE'}
+    l2 = 0.00024036 # from hyper-param tuning
     for model in models:
         num_negs(model,data,base,l2)
-
+        #tune_l2(model,data,base)
 
 def num_negs(model,data,base,l2):
     path = base + "{}/experiment_specs/".format(data)

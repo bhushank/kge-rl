@@ -4,6 +4,8 @@ import constants
 from sample_list import sample_list
 import cPickle as pickle
 from sklearn.neighbors import BallTree
+import torch
+import models
 
 class Negative_Sampler(object):
     def __init__(self,triples,num_samples,filtered):
@@ -252,5 +254,42 @@ class Adversarial_Sampler(Dynamic_Sampler):
         batched_negs = [self.sample(ex, is_target, e_v, num_samples) for ex, e_v in zip(batch, entity_vectors)]
         return batched_negs
 
+class Polcy_Sampler(Negative_Sampler):
+
+    def __init__(self,triples,num_samples,model_name,results_dir,filtered):
+        super(Polcy_Sampler,self).__init__(triples,float('inf'),filtered=False)
+        self.num_samples = num_samples
+        #Load pytorch model
+        params_path = os.path.join(results_dir, '{}_params.pt'.format(model_name))
+        state_dict = torch.load(params_path)
+        if model_name=='rescal':
+            #Todo:HardCoded.
+            self.model = models.Rescal(constants.fb15k_ents,constants.fb15k_rels,100)
+        self.model.load_state_dict(state_dict)
+        from optimizer import Reinforce
+        self.optim = Reinforce(self.model,self,self.num_samples)
+        print("\tNeg. Sampler: Adversarial RL, num_samples: {}, filtered: {}"
+              .format(num_samples, filtered))
+
+    def all_targets(self,ex,is_target):
+        gold = ex.t if is_target else ex.s
+        samples =  self._entity_set.copy()
+        if gold in samples:
+            samples.remove(gold)
+        return samples
+
+    def batch_all_targets(self,batch,is_target):
+        batched_targets = [self.all_targets(ex, is_target) for ex in batch]
+        return batched_targets
+
+    def pos(self,ex,is_target):
+        return self.t_filter[(ex.s, ex.r)] if is_target else self.s_filter[(ex.r, ex.t)]
+
+    def batch_positives(self,batch, is_target):
+        batched_pos = [self.pos(ex, is_target) for ex in batch]
+        return batched_pos
 
 
+    def batch_sample(self, batch, is_target, num_samples=0):
+        negatives = self.optim.minimize(batch,is_target)
+        return negatives

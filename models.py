@@ -12,6 +12,7 @@ class KGE(nn.Module):
             self.entities = nn.Embedding(n_ents, ent_dim)
 
         self.rels = nn.Embedding(n_rels,rel_dim)
+        self.init()
 
     def forward(self,sources,targets,rels):
         raise NotImplementedError('Abstract method')
@@ -23,14 +24,16 @@ class KGE(nn.Module):
 
     def init(self):
         self.entities.weight.data.uniform_(-0.1, 0.1)
-        self.relations.weight.data.uniform_(-0.1, 0.1)
+        self.rels.weight.data.uniform_(-0.1, 0.1)
 
     def broadcast(self,sources,targets,rels):
         # PyTorch 0.1.11 does not support broadcasting
-        if sources.size()[2] > rels.size()[2]:
+        if sources.size()[1] > targets.size()[1]:
+            rels = rels.unsqueeze(1)
             rels = rels.expand_as(sources)
             targets = targets.expand_as(sources)
         else:
+            rels = rels.unsqueeze(1)
             rels = rels.expand_as(targets)
             sources = sources.expand_as(targets)
         return sources,targets,rels
@@ -98,7 +101,13 @@ class TransE(KGE):
         rels = self.rels(rels)
         sources,targets,rels = self.broadcast(sources,targets,rels)
         # score = -||x_s + x_r - x_t||_2
-        return torch.neg(torch.norm(sources + rels - targets))
+        d = sources + rels - targets
+        #d = torch.abs(d)
+        d = torch.mul(d, d)
+        d = torch.sum(d,2)
+        return torch.neg(d).squeeze(2)
+
+
 
 class Distmult(KGE):
     def __init__(self, n_ents, n_rels, ent_dim):
@@ -141,7 +150,6 @@ class ComplEx(KGE):
         out = self.inner_prod(sources, targets, rels) + self.inner_prod(sources_i,targets_i,rels) \
               + self.inner_prod(sources,targets_i,rels_i) - self.inner_prod(sources_i,targets,rels_i)
         return out
-
 
 
 

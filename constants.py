@@ -25,6 +25,6 @@ num_epochs=1000
 
 '''Dataset details'''
 fb15k_rels = 1345
-
+fb15k_ents = 14951
 
 cat_file='/home/mitarb/kotnis/Code/kge-rl/entity_cat.cpkl'

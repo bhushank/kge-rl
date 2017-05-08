@@ -5,10 +5,10 @@ import constants
 import torch
 from torch.optim import Adam
 import os
-from negative_sampling import Dynamic_Sampler
-import gzip
-import cPickle as pickle
+from negative_sampling import Dynamic_Sampler, Polcy_Sampler
 from torch import nn
+from torch.autograd import Variable
+import copy
 
 class SGD(object):
     def __init__(self,train,dev,model,negative_sampler,evaluator,results_dir,config,state=None):
@@ -69,7 +69,7 @@ class SGD(object):
             print("Epoch {} took {} minutes {} seconds".format(epoch+1,mins,secs))
             # Refresh
             self.save()
-            if isinstance(self.ns,Dynamic_Sampler):
+            if isinstance(self.ns,Dynamic_Sampler) or isinstance(self.ns,Polcy_Sampler):
                 self.halt = True
 
             if self.halt:
@@ -83,7 +83,7 @@ class SGD(object):
         s_score = self.model(*s_batch)
         t_score = self.model(*t_batch)
         # score at index 0 is positive
-        if self.model_name in {'transE', 'rescal'}:
+        if self.model_name in {'transE', 'rescal','distmult','complex'}:
             return self.max_margin(s_score,volatile)+ self.max_margin(t_score,volatile)
         return self.nll(s_score,volatile) + self.nll(t_score,volatile)
 
@@ -154,3 +154,69 @@ class SGD(object):
         samples = util.sample(data,np.minimum(1000,self.test_batch_size))
         loss = self.fprop(samples, volatile=True).data.cpu().numpy()
         return loss
+
+
+class Reinforce():
+    def __init__(self,model,negative_sampler,num_samples):
+        self.ns = negative_sampler
+        self.model = model
+        self.optim = Adam(params=model.parameters())
+        self.softmax = nn.Softmax()
+        self.num_samples = num_samples
+
+    def minimize(self,batch,is_target):
+        self.optim.zero_grad()
+        loss,negatives = self.fprop(batch,is_target)
+        loss.backward()
+        self.optim.step()
+        return negatives
+
+    def fprop(self, batch,is_target, volatile=False):
+
+        if is_target:
+            target_negs = self.ns.batch_all_targets(batch, True)
+            t_batch = util.get_triples(batch, target_negs, True, volatile=volatile)
+            score = self.model(*t_batch)
+        else:
+            source_negs = self.ns.batch_all_targets(batch, False)
+            s_batch = util.get_triples(batch, source_negs, False, volatile=volatile)
+            score = self.model(*s_batch)
+        policy = self.softmax(score)
+        #batch sample
+        positives = self.ns.batch_positives(batch,is_target)
+        negatives,prod = self.sample(policy,positives)
+        reward = self.evaluate(batch,negatives,is_target)
+        r = Variable(torch.from_numpy(np.asarray(reward, dtype='float32')), volatile=volatile)
+        return torch.mean(torch.mul(prod,r)),negatives
+
+
+    def sample(self,policy,positives):
+        #step 1 project policy such that positives have zero probability
+
+        np_policy = policy.data.cpu().numpy()
+        acc = Variable(torch.from_numpy(np.zeros(np_policy.shape[0],dtype='float32')))
+        batch_samples = []
+        for count in range(np_policy.shape[0]):
+            for p in positives[count]:
+                np_policy[count][p] = 0.0
+            # normalize
+            np_policy[count] /= np.sum(np_policy[count])
+            assert np.abs(np.sum(np_policy[count]) - 1.0) <0.00001
+            # sample num_samples
+            samples = np.random.choice(range(np_policy.shape[1]),
+                                       size=self.num_samples,replace=False,p=np_policy[count])
+            # compute prod
+
+            for s in samples:
+                acc[count] = acc[count] + policy[count,s]
+
+            batch_samples.append(samples.tolist())
+
+        return batch_samples,acc
+
+    def evaluate(self,batch,negatives,is_target):
+        scores = self.model.predict(batch, negatives, is_target, is_pad=True).data.cpu().numpy()
+        ranks = util.ranks(scores, ascending=False)
+        #mrr = [100./r for r in ranks]
+        return ranks
+

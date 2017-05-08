@@ -13,6 +13,7 @@ import torch
 import data_loader
 
 def main(exp_name,data_path,resume,tune):
+    torch.manual_seed(32345)
     config = json.load(open(os.path.join(data_path,'experiment_specs',"{}.json".format(exp_name))))
     print("Pytorch Version {}".format(torch.__version__))
     operation = config.get('operation','train_test')
@@ -171,6 +172,8 @@ def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=Tru
             return negative_sampling.NN_Sampler(triples,config['num_negs'],model)
         elif config['neg_sampler'] == 'adversarial':
             return negative_sampling.Adversarial_Sampler(triples, config['num_negs'], model)
+        elif config['neg_sampler'] == 'rl':
+            return negative_sampling.Polcy_Sampler(triples, config['num_negs'],config['model'],results_dir, True)
         else:
             raise NotImplementedError("Neg. Sampler {} not implemented".format(config['neg_sampler']))
 
