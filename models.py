@@ -107,6 +107,14 @@ class TransE(KGE):
         d = torch.sum(d,2)
         return torch.neg(d).squeeze(2)
 
+    def output(self,entities,rels,is_target):
+        entities = self.entities(util.to_var(entities, True)).unsqueeze(2)
+        rels = self.rels(util.to_var(rels, True))
+        if is_target:
+            out = entities + rels
+        else:
+            out = entities - rels
+        return out.view(-1,out.size()[1] * out.size()[2]).data.cpu().numpy()
 
 
 class Distmult(KGE):

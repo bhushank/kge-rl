@@ -16,8 +16,8 @@ def sample(data,num_samples,replace=False):
 
     if len(data) <= num_samples:
         return data
-    idx = np.random.choice(len(data),num_samples,replace=replace)
-    return [data[i] for i in idx]
+    np.random.shuffle(data)
+    return data[:num_samples]
 
 
 def ranks(scores, ascending = False):

@@ -5,10 +5,11 @@ import constants
 import torch
 from torch.optim import Adam
 import os
-from negative_sampling import Dynamic_Sampler, Polcy_Sampler
+from negative_sampling import Dynamic_Sampler, Policy_Sampler
 from torch import nn
 from torch.autograd import Variable
-import copy
+import operator
+
 
 class SGD(object):
     def __init__(self,train,dev,model,negative_sampler,evaluator,results_dir,config,state=None):
@@ -23,7 +24,8 @@ class SGD(object):
         #SGD Params
         lr = config.get('lr',0.001)
         l2 = config.get('l2',0.0)
-        self.batch_size = config.get('batch_size',constants.batch_size)
+        #self.batch_size = config.get('batch_size',constants.batch_size)
+        self.batch_size = constants.batch_size
         print("lr: {:.4f}, l2: {:.5f}, batch_size: {}".format(lr,l2,self.batch_size))
         self.optim = Adam(model.parameters(),lr=lr,weight_decay=l2)
         if state is not None:
@@ -56,11 +58,15 @@ class SGD(object):
             for step,batch in enumerate(batches):
                 self.optim.zero_grad()
                 loss = self.fprop(batch)
+
                 loss.backward()
                 g_norm = torch.nn.utils.clip_grad_norm(self.model.parameters(), 100.0)
                 self.optim.step()
-                if step % self.report_steps == 0 and step!=0:
+                if step % self.report_steps == 0:
                     self.report(step,g_norm)
+                    if g_norm<0.0005:
+                        self.save()
+                        return
             self.prev_steps=0
             self.prev_time=time.time()
             end = time.time()
@@ -69,7 +75,7 @@ class SGD(object):
             print("Epoch {} took {} minutes {} seconds".format(epoch+1,mins,secs))
             # Refresh
             self.save()
-            if isinstance(self.ns,Dynamic_Sampler) or isinstance(self.ns,Polcy_Sampler):
+            if isinstance(self.ns,Dynamic_Sampler) or isinstance(self.ns,Policy_Sampler):
                 self.halt = True
 
             if self.halt:
@@ -125,14 +131,14 @@ class SGD(object):
             self.halt = True
 
     def report(self,step,g_norm):
-        norm_rep = "Gradient norm {:.3f}".format(g_norm)
+        norm_rep = "Gradient norm {:.4f}".format(g_norm)
         # Profiler
         secs = time.time() - self.prev_time
         num_steps = step - self.prev_steps
         speed = num_steps*self.batch_size / float(secs)
         self.prev_steps = step
         self.prev_time = time.time()
-        speed_rep = "Speed: {:.3f} steps/sec".format(speed)
+        speed_rep = "Speed: {:.4f} steps/sec".format(speed)
         # Objective
         train_obj = self.eval_obj(self.train)
         dev_obj = self.eval_obj(self.dev)
@@ -156,67 +162,85 @@ class SGD(object):
         return loss
 
 
-class Reinforce():
-    def __init__(self,model,negative_sampler,num_samples):
-        self.ns = negative_sampler
-        self.model = model
-        self.optim = Adam(params=model.parameters())
+class Reinforce(SGD):
+    def __init__(self, train, dev, model, negative_sampler, evaluator, results_dir, config, state=None):
+        assert isinstance(negative_sampler,Policy_Sampler)
+        super(Reinforce,self).__init__(train, dev, model, negative_sampler, evaluator, results_dir, config, state=state)
+        self.arms = dict()
         self.softmax = nn.Softmax()
-        self.num_samples = num_samples
+        # weight decay factor
+        self.delta = 0.1
 
-    def minimize(self,batch,is_target):
-        self.optim.zero_grad()
-        loss,negatives = self.fprop(batch,is_target)
-        loss.backward()
-        self.optim.step()
-        return negatives
+    def reinforce(self,batch,is_target,volatile):
+        entities = self.ns.batch_targets(batch,self.arms,is_target)
+        batch_var = util.get_triples(batch, entities, is_target, volatile=volatile)
+        scores = self.model(*batch_var)
+        loss = self.sample(batch,is_target,scores,entities)
+        # weight decay
+        #self.decay()
+        return torch.neg(loss)
 
-    def fprop(self, batch,is_target, volatile=False):
-
-        if is_target:
-            target_negs = self.ns.batch_all_targets(batch, True)
-            t_batch = util.get_triples(batch, target_negs, True, volatile=volatile)
-            score = self.model(*t_batch)
-        else:
-            source_negs = self.ns.batch_all_targets(batch, False)
-            s_batch = util.get_triples(batch, source_negs, False, volatile=volatile)
-            score = self.model(*s_batch)
-        policy = self.softmax(score)
-        #batch sample
-        positives = self.ns.batch_positives(batch,is_target)
-        negatives,prod = self.sample(policy,positives)
-        reward = self.evaluate(batch,negatives,is_target)
-        r = Variable(torch.from_numpy(np.asarray(reward, dtype='float32')), volatile=volatile)
-        return torch.mean(torch.mul(prod,r)),negatives
+    def fprop(self, batch, volatile=False):
+        s_loss = self.reinforce(batch,False,volatile)
+        t_loss = self.reinforce(batch,True,volatile)
+        return s_loss + t_loss
 
 
-    def sample(self,policy,positives):
-        #step 1 project policy such that positives have zero probability
 
-        np_policy = policy.data.cpu().numpy()
-        acc = Variable(torch.from_numpy(np.zeros(np_policy.shape[0],dtype='float32')))
-        batch_samples = []
-        for count in range(np_policy.shape[0]):
-            for p in positives[count]:
-                np_policy[count][p] = 0.0
-            # normalize
-            np_policy[count] /= np.sum(np_policy[count])
-            assert np.abs(np.sum(np_policy[count]) - 1.0) <0.00001
-            # sample num_samples
-            samples = np.random.choice(range(np_policy.shape[1]),
-                                       size=self.num_samples,replace=False,p=np_policy[count])
-            # compute prod
 
-            for s in samples:
-                acc[count] = acc[count] + policy[count,s]
+    def sample(self,batch,is_target,scores,entities):
 
-            batch_samples.append(samples.tolist())
+        policy = self.softmax(scores[:,1:])
+        policy_np = policy.data.cpu().numpy()
+        loss = Variable(torch.from_numpy(np.asarray([0],dtype='float32')))
+        for count in range(policy_np.shape[0]):
+            # sample an action (choose a target)
+            positives = self.ns.pos(batch[count], is_target)
+            neg_map = {entities[count][i]: i for i in range(len(entities[count]))}
+            proj_policy = self.project_policy(batch[count], policy_np[count],neg_map, is_target)
+            samples = np.random.choice(entities[count],1,p=proj_policy)
+            samples_idx = [neg_map[s] for s in samples]
+            #Update arms
+            rewards = self.compute_reward(samples,samples_idx,scores[count,0].data.cpu().numpy(),scores[count,1:].data.cpu().numpy())
+            if len(rewards.keys()) >0:
+                for ind,s in enumerate(rewards.keys()):
+                    assert s not in positives
+                    loss += policy[count,neg_map[s]]*Variable(torch.from_numpy(np.asarray([rewards[s]],dtype='float32')),requires_grad=False)
+        return loss
 
-        return batch_samples,acc
 
-    def evaluate(self,batch,negatives,is_target):
-        scores = self.model.predict(batch, negatives, is_target, is_pad=True).data.cpu().numpy()
-        ranks = util.ranks(scores, ascending=False)
-        #mrr = [100./r for r in ranks]
-        return ranks
+    def pad(self,samples,val):
+        if len(samples)<self.ns.num_samples:
+            padding = [val] * (self.ns.num_samples - len(samples))
+            samples.extend(padding)
+        return samples
+
+
+    def compute_reward(self,actions,actions_idx,pos_score,scores):
+        scores_map = {a:-1.*scores[actions_idx[i]] for i,a in enumerate(actions)}
+        scores_map['pos'] = -pos_score
+        sorted_scores = sorted(scores_map.items(), key=operator.itemgetter(1))
+        rewards = dict()
+        count = 0
+        for a,s in sorted_scores:
+            if a=='pos':
+                rewards = {a: rewards[a] - count for a in rewards.keys()}
+                for a in rewards:
+                    self.arms[a] = self.arms.get(a,0.0) - rewards[a]
+                return rewards
+            rewards[a] = count
+            count += 1
+
+    def decay(self):
+        for a in self.arms:
+            self.arms[a] *= self.delta
+
+    def project_policy(self,ex,policy,ent_map,is_target):
+        positives = self.ns.pos(ex, is_target)
+        for p in positives:
+            if p in ent_map:
+                policy[ent_map[p]] = 0.0
+        return policy / np.sum(policy)
+
+
 

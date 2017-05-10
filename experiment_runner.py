@@ -62,11 +62,14 @@ def train(config,exp_name,data_path,resume=False,tune=False):
     if resume or tune:
         params_path = os.path.join(results_dir, '{}_params.pt'.format(config['model']))
         model.load_state_dict(torch.load(params_path))
-        if resume:
+        if resume or config['neg_sampler']=='rl':
             state_path = os.path.join(results_dir,'{}_optim_state.pt'.format(config['model']))
             state = torch.load(state_path)
-
-    sgd = optimizer.SGD(data_set['train'],data_set['dev'],model,
+    if config['neg_sampler'] == 'rl':
+        sgd = optimizer.Reinforce(data_set['train'],data_set['dev'],model,
+                        neg_sampler,evaluator,results_dir,config,state)
+    else:
+        sgd = optimizer.SGD(data_set['train'],data_set['dev'],model,
                         neg_sampler,evaluator,results_dir,config,state)
 
     start = time.time()
@@ -107,12 +110,10 @@ def test(config,exp_name,data_path):
     model.eval()
     print("Filtered Setting")
     evaluate(data_set['test'],evaluator,results_dir,is_dev,True)
-    if not is_dev:
-        print("Raw Setting")
-        _,_, evaluator = build_model(all_data, config,
-                                     results_dir,data_set['num_ents'],
-                                     data_set['num_rels'], train=False,filtered=False)
-        evaluate(data_set['test'], evaluator, results_dir, is_dev, False)
+    #if not is_dev:
+        #evaluator.ns.filtered=False
+        #print("Raw Setting, filtered: {}".format(evaluator.ns.filtered))
+        #evaluate(data_set['test'], evaluator, results_dir, is_dev, False)
 
 
 def evaluate(data,evaluater,results_dir,is_dev,filtered):
@@ -138,7 +139,7 @@ def evaluate(data,evaluater,results_dir,is_dev,filtered):
     filt = 'filt' if filtered else 'raw'
     all_ranks = [str(x) for x in evaluater.all_ranks]
     with open(os.path.join(results_dir,'ranks_{}_{}'.format(split,filt)),'w') as f:
-        f.write("\n".join(all_ranks))
+        f.write("\n".join(all_ranks) +"\n")
     with open(os.path.join(results_dir,'results_{}_{}'.format(split,filt)),'w') as f:
         f.write("Mean Reciprocal Rank : {:.4f}\nHITS@10 : {:.4f}\n".
                 format(mrr,h10))
@@ -173,7 +174,7 @@ def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=Tru
         elif config['neg_sampler'] == 'adversarial':
             return negative_sampling.Adversarial_Sampler(triples, config['num_negs'], model)
         elif config['neg_sampler'] == 'rl':
-            return negative_sampling.Polcy_Sampler(triples, config['num_negs'],config['model'],results_dir, True)
+            return negative_sampling.Policy_Sampler(triples, config['num_negs'],True)
         else:
             raise NotImplementedError("Neg. Sampler {} not implemented".format(config['neg_sampler']))
 
@@ -193,7 +194,7 @@ def is_gpu(model,cuda):
         print("Using GPU {}".format(torch.cuda.current_device()))
     else:
         print("Using CPU")
-        torch.set_num_threads(56)
+        #torch.set_num_threads(40)
     return model
 
 if __name__=='__main__':

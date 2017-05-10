@@ -6,11 +6,11 @@ def main():
     data = 'freebase'
     base = "/home/mitarb/kotnis/Data/neg_sampling/"
     #models = {'rescal','transE','distmult','complex'}
-    models = {'transE'}
+    models = {'distmult'}
     l2 = 0.00024036 # from hyper-param tuning
     for model in models:
-        num_negs(model,data,base,l2)
-        #tune_l2(model,data,base)
+        #num_negs(model,data,base,l2)
+        tune_l2(model,data,base)
 
 def num_negs(model,data,base,l2):
     path = base + "{}/experiment_specs/".format(data)
@@ -42,7 +42,7 @@ def create_config(model_name,neg_sampler='random',l2=0):
     config['neg_sampler'] = neg_sampler
     config['num_negs'] = 10
     config['num_epochs']= 100
-    config['is_dev'] = True
+    config['is_dev'] = False
     config['ent_dim'] = 100
     return config
 

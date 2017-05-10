@@ -15,13 +15,13 @@ num_test_negs = float('inf')
 
 
 '''Report and Save model'''
-report_steps = 20
+report_steps = 1
 
 
 '''Early Stopping'''
 early_stop_counter = 3
 patience = 3
-num_epochs=1000
+num_epochs=100
 
 '''Dataset details'''
 fb15k_rels = 1345

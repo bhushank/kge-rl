@@ -4,8 +4,8 @@ import constants
 from sample_list import sample_list
 import cPickle as pickle
 from sklearn.neighbors import BallTree
-import torch
-import models
+import numpy as np
+
 
 class Negative_Sampler(object):
     def __init__(self,triples,num_samples,filtered):
@@ -254,42 +254,43 @@ class Adversarial_Sampler(Dynamic_Sampler):
         batched_negs = [self.sample(ex, is_target, e_v, num_samples) for ex, e_v in zip(batch, entity_vectors)]
         return batched_negs
 
-class Polcy_Sampler(Negative_Sampler):
+class Policy_Sampler(Random_Sampler):
 
-    def __init__(self,triples,num_samples,model_name,results_dir,filtered):
-        super(Polcy_Sampler,self).__init__(triples,float('inf'),filtered=False)
-        self.num_samples = num_samples
-        #Load pytorch model
-        params_path = os.path.join(results_dir, '{}_params.pt'.format(model_name))
-        state_dict = torch.load(params_path)
-        if model_name=='rescal':
-            #Todo:HardCoded.
-            self.model = models.Rescal(constants.fb15k_ents,constants.fb15k_rels,100)
-        self.model.load_state_dict(state_dict)
-        from optimizer import Reinforce
-        self.optim = Reinforce(self.model,self,self.num_samples)
-        print("\tNeg. Sampler: Adversarial RL, num_samples: {}, filtered: {}"
+    def __init__(self,triples,num_samples,filtered):
+        super(Policy_Sampler,self).__init__(triples,num_samples,filtered=False)
+        self.eps = 0.5
+        self.min_samples = 500
+
+        print("\tNeg. Sampler: Policy Gradient, Num. Samples {}".format(self.num_samples)
               .format(num_samples, filtered))
 
-    def all_targets(self,ex,is_target):
-        gold = ex.t if is_target else ex.s
-        samples =  self._entity_set.copy()
-        if gold in samples:
-            samples.remove(gold)
-        return samples
+    def batch_targets(self,batch,arms,is_target):
+        if True:
+            return  self.batch_sample(batch, is_target,num_samples=float('inf'))
+        arms_arr = []
+        prob = []
+        for a, p in arms.iteritems():
+            arms_arr.append(a)
+            prob.append(p)
+        prob = np.asarray(prob)
+        prob /= np.sum(prob)
+        return [self.sample_arms(arms_arr,prob,ex,is_target) for ex in batch]
 
-    def batch_all_targets(self,batch,is_target):
-        batched_targets = [self.all_targets(ex, is_target) for ex in batch]
-        return batched_targets
+    def sample_arms(self,arms,prob,ex,is_target):
+        # random
+        if np.random.uniform() <= self.eps:
+            return self.sample(ex, is_target,num_samples=min(len(arms),self.min_samples))
+        if len(arms) <=self.min_samples:
+            return arms
+        return np.random.choice(arms,self.min_samples,replace=False,p=prob)
+
 
     def pos(self,ex,is_target):
-        return self.t_filter[(ex.s, ex.r)] if is_target else self.s_filter[(ex.r, ex.t)]
+        return list(self.t_filter[(ex.s, ex.r)] if is_target else self.s_filter[(ex.r, ex.t)])
 
     def batch_positives(self,batch, is_target):
         batched_pos = [self.pos(ex, is_target) for ex in batch]
         return batched_pos
 
 
-    def batch_sample(self, batch, is_target, num_samples=0):
-        negatives = self.optim.minimize(batch,is_target)
-        return negatives
+
