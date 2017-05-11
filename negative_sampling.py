@@ -256,7 +256,7 @@ class Adversarial_Sampler(Dynamic_Sampler):
 
 class Policy_Sampler(Random_Sampler):
 
-    def __init__(self,triples,num_samples,filtered):
+    def __init__(self,triples,num_samples,filtered=True):
         super(Policy_Sampler,self).__init__(triples,num_samples,filtered=False)
         self.eps = 0.5
         self.min_samples = 500

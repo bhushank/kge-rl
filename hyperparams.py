@@ -26,7 +26,7 @@ def tune_l2(model,data,base):
     path = base+"{}/experiment_specs/".format(data)
     exp_name = "{}".format(model) + "{}.json"
     config = create_config(model)
-    l2 = np.sort(np.random.uniform(2,4,size=4))
+    l2 = np.sort(np.random.uniform(4,6,size=4))
 
     for count,e in enumerate(l2):
             config['l2'] = np.power(10,-e)
@@ -36,7 +36,7 @@ def tune_l2(model,data,base):
 def create_config(model_name,neg_sampler='random',l2=0):
     config = dict()
     config['model'] = model_name
-    config['lr'] = 0.001
+    config['lr'] = 0.01
     config['l2'] = l2
     config['batch_size'] = constants.batch_size
     config['neg_sampler'] = neg_sampler

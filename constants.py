@@ -15,7 +15,7 @@ num_test_negs = float('inf')
 
 
 '''Report and Save model'''
-report_steps = 1
+report_steps = 20
 
 
 '''Early Stopping'''

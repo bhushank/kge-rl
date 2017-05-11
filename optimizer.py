@@ -9,7 +9,7 @@ from negative_sampling import Dynamic_Sampler, Policy_Sampler
 from torch import nn
 from torch.autograd import Variable
 import operator
-
+import copy
 
 class SGD(object):
     def __init__(self,train,dev,model,negative_sampler,evaluator,results_dir,config,state=None):
@@ -64,9 +64,7 @@ class SGD(object):
                 self.optim.step()
                 if step % self.report_steps == 0:
                     self.report(step,g_norm)
-                    if g_norm<0.0005:
-                        self.save()
-                        return
+
             self.prev_steps=0
             self.prev_time=time.time()
             end = time.time()
@@ -89,7 +87,7 @@ class SGD(object):
         s_score = self.model(*s_batch)
         t_score = self.model(*t_batch)
         # score at index 0 is positive
-        if self.model_name in {'transE', 'rescal','distmult','complex'}:
+        if self.model_name in {'transE', 'rescal','distmult'}:
             return self.max_margin(s_score,volatile)+ self.max_margin(t_score,volatile)
         return self.nll(s_score,volatile) + self.nll(t_score,volatile)
 
@@ -170,11 +168,12 @@ class Reinforce(SGD):
         self.softmax = nn.Softmax()
         # weight decay factor
         self.delta = 0.1
+        self.frozen_model = copy.deepcopy(model)
 
     def reinforce(self,batch,is_target,volatile):
         entities = self.ns.batch_targets(batch,self.arms,is_target)
         batch_var = util.get_triples(batch, entities, is_target, volatile=volatile)
-        scores = self.model(*batch_var)
+        scores = self.frozen_model(*batch_var)
         loss = self.sample(batch,is_target,scores,entities)
         # weight decay
         #self.decay()
@@ -184,8 +183,6 @@ class Reinforce(SGD):
         s_loss = self.reinforce(batch,False,volatile)
         t_loss = self.reinforce(batch,True,volatile)
         return s_loss + t_loss
-
-
 
 
     def sample(self,batch,is_target,scores,entities):

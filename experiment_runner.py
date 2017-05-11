@@ -152,9 +152,9 @@ def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=Tru
         elif config['model']=='transE':
             return models.TransE(n_ents, n_rels, config['ent_dim'])
         elif config['model']=='distmult':
-            return models.TransE(n_ents, n_rels, config['ent_dim'])
+            return models.Distmult(n_ents, n_rels, config['ent_dim'])
         elif config['model']=='complex':
-            return models.TransE(n_ents, n_rels, config['ent_dim'])
+            return models.ComplEx(n_ents, n_rels, config['ent_dim'])
         else:
             raise NotImplementedError("Model {} not implemented".format(config['model']))
 
@@ -174,7 +174,7 @@ def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=Tru
         elif config['neg_sampler'] == 'adversarial':
             return negative_sampling.Adversarial_Sampler(triples, config['num_negs'], model)
         elif config['neg_sampler'] == 'rl':
-            return negative_sampling.Policy_Sampler(triples, config['num_negs'],True)
+            return negative_sampling.Policy_Sampler(triples, config['num_negs'])
         else:
             raise NotImplementedError("Neg. Sampler {} not implemented".format(config['neg_sampler']))
 

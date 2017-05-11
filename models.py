@@ -28,18 +28,19 @@ class KGE(nn.Module):
 
     def broadcast(self,sources,targets,rels):
         # PyTorch 0.1.11 does not support broadcasting
+        rels = rels.unsqueeze(1)
         if sources.size()[1] > targets.size()[1]:
-            rels = rels.unsqueeze(1)
             rels = rels.expand_as(sources)
             targets = targets.expand_as(sources)
         else:
-            rels = rels.unsqueeze(1)
             rels = rels.expand_as(targets)
             sources = sources.expand_as(targets)
         return sources,targets,rels
 
-    def inner_prod(self,x,y,z):
-        return torch.sum(torch.mul(torch.mul(x, y), z), 1)
+    def inner_prod(self,s,r,t):
+        prod = torch.mul(r,t).unsqueeze(2)
+        score = torch.bmm(s, prod)
+        return score
 
     def all_entity_vectors(self):
         var = util.to_var(range(self.num_ents),volatile=True)
@@ -126,41 +127,59 @@ class Distmult(KGE):
         sources = self.entities(sources)
         targets = self.entities(targets)
         rels = self.rels(rels)
-        sources, targets, rels = self.broadcast(sources, targets, rels)
         # score = x_s^T Diag(W_r) x_t
-        return self.inner_prod(sources,targets,rels)
+        if sources.size()[1] > targets.size()[1]:
+            out = self.inner_prod(sources,rels,targets).squeeze(2)
+        else:
+            out = self.inner_prod(targets, rels, sources).squeeze(2)
 
+        return out
+
+
+    def init(self):
+        #self.entities.weight.data.normal_(std=0.1)
+        #self.rels.weight.data.normal_(std=0.1)
+        self.entities.weight.data.uniform_(-1., 1.)
+        self.rels.weight.data.uniform_(-1., 1.)
 
 class ComplEx(KGE):
     def __init__(self, n_ents, n_rels, ent_dim):
         super(ComplEx, self).__init__(n_ents, n_rels, ent_dim, ent_dim,max_norm=True)
         self.entities_i = nn.Embedding(n_ents,ent_dim,max_norm=1)
         self.rels_i = nn.Embedding(n_rels,ent_dim)
+        self.init_all()
         print("Initializing ComplEx model")
 
-    def init(self):
-        self.entities.weight.data.uniform_(-0.1, 0.1)
-        self.rels.weight.data.uniform_(-0.1, 0.1)
+    def init_all(self):
+        self.entities.weight.data.normal_(std=0.1)
+        self.rels.weight.data.normal_(std=0.1)
         self.entities_i.weight.data.uniform_(-0.1, 0.1)
         self.rels_i.weight.data.uniform_(-0.1, 0.1)
 
 
     def forward(self,sources,targets,rels):
-        sources = self.entities(sources)
-        targets = self.entities(targets)
-        rels = self.relations(rels)
         sources_i = self.entities_i(sources)
         targets_i = self.entities_i(targets)
-        rels_i = self.relations_i(rels)
-        sources, targets, rels = self.broadcast(sources, targets, rels)
-        sources_i, targets_i, rels_i = self.broadcast(sources_i, targets_i, rels_i)
+        rels_i = self.rels_i(rels)
+        sources = self.entities(sources)
+        targets = self.entities(targets)
+        rels = self.rels(rels)
+
+        rels = self.broadcast(sources, targets, rels)
+        rels_i = self.broadcast(sources_i, targets_i, rels_i)
         # score = <w_r,e_s,e_o> + <w_r,e_s_i,e_o_i> + <w_r_i,e_s,e_o_i> - <w_r_i,e_s_i,e_o>
-        out = self.inner_prod(sources, targets, rels) + self.inner_prod(sources_i,targets_i,rels) \
-              + self.inner_prod(sources,targets_i,rels_i) - self.inner_prod(sources_i,targets,rels_i)
+        if sources.size()[1] > targets.size()[1]:
+            out = self.inner_prod(sources, rels,torch.transpose(targets, 1, 2)) \
+                  + self.inner_prod(sources_i,rels,torch.transpose(targets_i, 1, 2)) \
+              + self.inner_prod(sources,rels_i,torch.transpose(targets_i, 1, 2)) \
+                  - self.inner_prod(sources_i,rels_i,torch.transpose(targets, 1, 2))
+        else:
+            out = self.inner_prod(targets, rels,torch.transpose(sources, 1, 2)) \
+                  + self.inner_prod(targets_i,rels,torch.transpose(sources_i, 1, 2)) \
+              + self.inner_prod(targets_i,rels_i,torch.transpose(sources, 1, 2)) \
+                  - self.inner_prod(targets,rels_i,torch.transpose(sources_i, 1, 2))
+        out = out.view(-1, out.size()[1] * out.size()[2])
         return out
-
-
-
 
 
 
