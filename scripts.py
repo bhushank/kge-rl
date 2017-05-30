@@ -3,6 +3,7 @@ import torch
 import negative_sampling
 import data_loader
 import models
+''''
 data_path = '/home/kotnis/data/neg_sampling/freebase/'
 params_path = data_path + 'rescal_params.pt'
 results_dir = data_path + 'rescal_1/'
@@ -20,3 +21,12 @@ start = time.time()
 samples = ns.batch_sample(batch,True,100)
 end = time.time()
 print("Time Taken {}".format(end-start))
+'''
+
+import numpy as np
+n_h = 0
+for n in range(500):
+    if np.random.uniform() < 0.27:
+        n_h+=1
+
+print(n_h/float(n))

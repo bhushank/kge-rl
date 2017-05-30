@@ -62,9 +62,9 @@ def train(config,exp_name,data_path,resume=False,tune=False):
     if resume or tune:
         params_path = os.path.join(results_dir, '{}_params.pt'.format(config['model']))
         model.load_state_dict(torch.load(params_path))
-        if resume or config['neg_sampler']=='rl':
-            state_path = os.path.join(results_dir,'{}_optim_state.pt'.format(config['model']))
-            state = torch.load(state_path)
+    if resume:
+        state_path = os.path.join(results_dir,'{}_optim_state.pt'.format(config['model']))
+        state = torch.load(state_path)
     if config['neg_sampler'] == 'rl':
         sgd = optimizer.Reinforce(data_set['train'],data_set['dev'],model,
                         neg_sampler,evaluator,results_dir,config,state)
@@ -87,6 +87,7 @@ def test(config,exp_name,data_path):
 
     print("Testing...\n")
     is_dev = config['is_dev']
+
     cuda =  torch.cuda.is_available()
     print("\n***{} MODE***\n".format('DEV' if is_dev else 'TEST'))
     results_dir = os.path.join(data_path, exp_name)
@@ -170,9 +171,9 @@ def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=Tru
         elif config['neg_sampler'] == 'relational':
             return negative_sampling.Relational_Sampler(triples,config['num_negs'])
         elif config['neg_sampler'] == 'nn':
-            return negative_sampling.NN_Sampler(triples,config['num_negs'],model)
+            return negative_sampling.NN_Sampler(triples,config['num_negs'])
         elif config['neg_sampler'] == 'adversarial':
-            return negative_sampling.Adversarial_Sampler(triples, config['num_negs'], model)
+            return negative_sampling.Adversarial_Sampler(triples, config['num_negs'])
         elif config['neg_sampler'] == 'rl':
             return negative_sampling.Policy_Sampler(triples, config['num_negs'])
         else:
@@ -185,7 +186,8 @@ def build_model(triples,config,results_dir,n_ents,n_rels,train=True,filtered=Tru
         eval_ns = negative_sampling.Random_Sampler(triples,constants.num_dev_negs)
         evaluator = RankEvaluator(model,eval_ns)
     else:
-        evaluator = TestEvaluator(model,ns,results_dir)
+        test_ns = negative_sampling.Test_Sampler(triples,constants.num_dev_negs)
+        evaluator = TestEvaluator(model,test_ns,results_dir)
     return model,ns,evaluator
 
 def is_gpu(model,cuda):

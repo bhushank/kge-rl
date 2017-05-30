@@ -2,6 +2,7 @@ import numpy as np
 from torch.autograd import Variable
 import torch
 from scipy import stats
+import constants
 cache = dict()
 
 def chunk(arr,chunk_size):
@@ -60,10 +61,10 @@ def to_var(x,volatile=False):
     return var
 
 def pad_arr(arr,val):
-    if len(arr)>=14951:
+    if len(arr)>=constants.wn_ents:
         return arr
     else:
-        zeros = [val]*(14951-len(arr))
+        zeros = [val]*(constants.wn_ents-len(arr))
         arr.extend(zeros)
         return arr
 

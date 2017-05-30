@@ -20,13 +20,13 @@ class SGD(object):
         self.ns = negative_sampler
         self.results_dir = results_dir
         self.model_name = config['model']
-
+        self.is_softmax = config.get('softmax', False)
         #SGD Params
         lr = config.get('lr',0.001)
         l2 = config.get('l2',0.0)
         #self.batch_size = config.get('batch_size',constants.batch_size)
         self.batch_size = constants.batch_size
-        print("lr: {:.4f}, l2: {:.5f}, batch_size: {}".format(lr,l2,self.batch_size))
+        print("lr: {:.4f}, l2: {:.5f}, batch_size: {}, Softmax: {}".format(lr,l2,self.batch_size,self.is_softmax))
         self.optim = Adam(model.parameters(),lr=lr,weight_decay=l2)
         if state is not None:
             self.optim.load_state_dict(state)
@@ -34,11 +34,12 @@ class SGD(object):
         self.prev_score = evaluator.init_score
         self.early_stop_counter = constants.early_stop_counter
         self.patience = constants.patience
-        self.num_epochs = config.get('num_epochs',constants.num_epochs)
+        self.num_epochs = constants.num_epochs
 
         self.report_steps = constants.report_steps
         self.test_batch_size = config.get('test_batch_size',constants.test_batch_size)
         self.halt = False
+        self.dump = False # save without checking
 
         self.prev_steps = 0
         self.prev_time = time.time()
@@ -46,6 +47,7 @@ class SGD(object):
         #Loss
         self.mm = nn.MarginRankingLoss(margin=1)
         self.logistic = nn.SoftMarginLoss()
+        self.cross_ent = nn.CrossEntropyLoss()
 
 
     def minimize(self):
@@ -58,9 +60,8 @@ class SGD(object):
             for step,batch in enumerate(batches):
                 self.optim.zero_grad()
                 loss = self.fprop(batch)
-
                 loss.backward()
-                g_norm = torch.nn.utils.clip_grad_norm(self.model.parameters(), 100.0)
+                g_norm = torch.nn.utils.clip_grad_norm(self.model.parameters(), 100)
                 self.optim.step()
                 if step % self.report_steps == 0:
                     self.report(step,g_norm)
@@ -72,25 +73,29 @@ class SGD(object):
             secs = int(end - start)%60
             print("Epoch {} took {} minutes {} seconds".format(epoch+1,mins,secs))
             # Refresh
-            self.save()
+            self.save(self.dump)
+            # Only one epoch for Dynamic Samplers
             if isinstance(self.ns,Dynamic_Sampler) or isinstance(self.ns,Policy_Sampler):
-                self.halt = True
-
+                self.dump = False
+                if epoch>=4:
+                    self.halt = True
             if self.halt:
                 return
 
-    def fprop(self,batch,volatile=False):
-        source_negs = self.ns.batch_sample(batch, False)
-        target_negs = self.ns.batch_sample(batch, True)
-        s_batch = util.get_triples(batch,source_negs,False,volatile=volatile)
-        t_batch = util.get_triples(batch, target_negs, True,volatile=volatile)
-        s_score = self.model(*s_batch)
-        t_score = self.model(*t_batch)
-        # score at index 0 is positive
-        if self.model_name in {'transE', 'rescal','distmult'}:
-            return self.max_margin(s_score,volatile)+ self.max_margin(t_score,volatile)
-        return self.nll(s_score,volatile) + self.nll(t_score,volatile)
+    def forward(self,batch,volatile,is_target):
+        negs = self.ns.batch_sample(batch, is_target)
+        batch = util.get_triples(batch, negs, is_target, volatile=volatile)
+        score = self.model(*batch)
 
+        # score at index 0 is positive
+        if self.is_softmax:
+            return self.softmax(score, volatile)# + self.softmax(s_score, volatile)
+        if self.model_name in {'transE', 'rescal','distmult','complex'}:
+            return self.max_margin(score, volatile)# + self.max_margin(t_score, volatile)
+        return self.nll(score, volatile) #+ self.nll(t_score, volatile)
+
+    def fprop(self,batch,volatile=False):
+        return self.forward(batch,volatile,True) + self.forward(batch, volatile, False)
 
     def max_margin(self,scores,volatile):
         y = util.to_var(np.ones(scores.size()[0],dtype='float32'),volatile=volatile)
@@ -107,11 +112,18 @@ class SGD(object):
             loss += self.logistic(scores[:, i], y_neg)
         return loss/scores.size()[1]
 
+    def softmax(self,scores,volatile):
+        # Need to recreate y every time because batch sizes may vary, though one could cache for batch sizes
+        # Very large batch size, negligible effect
+        y = np.zeros(scores.size()[0],dtype='int')
+        y = util.to_var(y,volatile=volatile)
+        loss = self.cross_ent(scores,y)
+        return loss
 
-    def save(self):
+    def save(self,dump=False):
         curr_score = self.evaluate(self.dev,self.test_batch_size,True)
         print("Current Score: {}, Previous Score: {}".format(curr_score,self.prev_score))
-        if self.evaluator.comparator(curr_score, self.prev_score):
+        if self.evaluator.comparator(curr_score, self.prev_score) or dump:
             print("Saving params...\n")
             torch.save(self.model.state_dict(), os.path.join(
                 self.results_dir,'{}_params.pt'.format(self.model_name)))
@@ -170,6 +182,12 @@ class Reinforce(SGD):
         self.delta = 0.1
         self.frozen_model = copy.deepcopy(model)
 
+    def fprop(self, batch, volatile=False):
+        s_loss = self.reinforce(batch, False, volatile)
+        t_loss = self.reinforce(batch, True, volatile)
+        return s_loss + t_loss
+
+
     def reinforce(self,batch,is_target,volatile):
         entities = self.ns.batch_targets(batch,self.arms,is_target)
         batch_var = util.get_triples(batch, entities, is_target, volatile=volatile)
@@ -178,12 +196,6 @@ class Reinforce(SGD):
         # weight decay
         #self.decay()
         return torch.neg(loss)
-
-    def fprop(self, batch, volatile=False):
-        s_loss = self.reinforce(batch,False,volatile)
-        t_loss = self.reinforce(batch,True,volatile)
-        return s_loss + t_loss
-
 
     def sample(self,batch,is_target,scores,entities):
 
@@ -206,13 +218,6 @@ class Reinforce(SGD):
         return loss
 
 
-    def pad(self,samples,val):
-        if len(samples)<self.ns.num_samples:
-            padding = [val] * (self.ns.num_samples - len(samples))
-            samples.extend(padding)
-        return samples
-
-
     def compute_reward(self,actions,actions_idx,pos_score,scores):
         scores_map = {a:-1.*scores[actions_idx[i]] for i,a in enumerate(actions)}
         scores_map['pos'] = -pos_score
@@ -228,10 +233,6 @@ class Reinforce(SGD):
             rewards[a] = count
             count += 1
 
-    def decay(self):
-        for a in self.arms:
-            self.arms[a] *= self.delta
-
     def project_policy(self,ex,policy,ent_map,is_target):
         positives = self.ns.pos(ex, is_target)
         for p in positives:
@@ -239,5 +240,12 @@ class Reinforce(SGD):
                 policy[ent_map[p]] = 0.0
         return policy / np.sum(policy)
 
+    def pad(self,samples,val):
+        if len(samples)<self.ns.num_samples:
+            padding = [val] * (self.ns.num_samples - len(samples))
+            samples.extend(padding)
+        return samples
 
-
+    def decay(self):
+        for a in self.arms:
+            self.arms[a] *= self.delta

@@ -58,12 +58,28 @@ class Negative_Sampler(object):
             filter[key] = candidates
         return filter
 
+class Test_Sampler(Negative_Sampler):
+    def __init__(self,triples,num_samples,filtered=True):
+        super(Test_Sampler,self).__init__(triples,num_samples,filtered)
+
+
+    def sample(self,ex,is_target,num_samples=0):
+        candidates = self._entity_set.copy()
+        samples = self.filter_candidates(ex,is_target,candidates)
+        return list(samples)
+
+    def batch_sample(self, batch, is_target, num_samples=0):
+        batched_negs = [self.sample(ex, is_target, num_samples) for ex in batch]
+        negs_size = [len(s) for s in batched_negs]
+        return batched_negs,negs_size
+
 
 class Random_Sampler(Negative_Sampler):
     def __init__(self,triples,num_samples,filtered=False):
         super(Random_Sampler,self).__init__(triples,num_samples,filtered)
 
         print("\tNeg. Sampler: Random, num_samples: {}, filtered: {}".format(num_samples,filtered))
+
 
     def sample(self,ex,is_target,num_samples=0):
         candidates = self._entity_set.copy()
@@ -73,6 +89,9 @@ class Random_Sampler(Negative_Sampler):
             assert self.filtered or len(samples)==14950
             return list(samples)
         #samples = np.random.choice(list(samples), num_samples, replace=False).tolist()
+        #samples = list(samples)
+        #np.random.shuffle(samples)
+        #samples = samples[:num_samples]
         samples = sample_list(list(samples),num_samples)
         assert len(samples) >= 1
         return samples
@@ -113,7 +132,7 @@ class Static_Sampler(Negative_Sampler):
 
 
 class Corrupt_Sampler(Static_Sampler):
-    def __init__(self,triples,num_samples,filtered=False):
+    def __init__(self,triples,num_samples,filtered=True):
         super(Corrupt_Sampler,self).__init__(triples,num_samples,filtered)
         self._typed_entities = self.get_typed()
         print("\tNeg. Sampler: Corrupt, num_samples: {}, filtered: {}".format(num_samples, filtered))
@@ -222,12 +241,22 @@ class Dynamic_Sampler(Negative_Sampler):
     def get_entity(self,ex,is_target):
         return ex.t if is_target else ex.s
 
+    def load_rescal(self):
+        from models import Rescal
+        import torch
+        path = "/home/mitarb/kotnis/Data/neg_sampling/wordnet/corrupt/rescal/rescal_100/rescal_params.pt"
+        model =  Rescal(constants.fb15k_ents,constants.fb15k_rels,100)
+        state_dict = torch.load(path)
+        model.load_state_dict(state_dict)
+        model.eval()
+        return model
+
 class NN_Sampler(Dynamic_Sampler):
-    def __init__(self,triples,num_samples,model,filtered=True):
+    def __init__(self,triples,num_samples,filtered=True):
+        model = self.load_rescal()
         super(NN_Sampler,self).__init__(triples,num_samples,model,filtered)
         print("\tNeg. Sampler: Nearest Neighbors, num_samples: {}, filtered: {}"
               .format(num_samples, filtered))
-
 
     def batch_sample(self, batch, is_target, num_samples=0):
 
@@ -238,10 +267,13 @@ class NN_Sampler(Dynamic_Sampler):
 
 
 class Adversarial_Sampler(Dynamic_Sampler):
-    def __init__(self,triples,num_samples,model,filtered=True):
+    def __init__(self,triples,num_samples,filtered=True):
+        model = self.load_rescal()
         super(Adversarial_Sampler,self).__init__(triples,num_samples,model,filtered)
         print("\tNeg. Sampler: Adversarial, num_samples: {}, filtered: {}"
               .format(num_samples, filtered))
+
+
 
     def batch_sample(self, batch, is_target, num_samples=0):
         entities = []
