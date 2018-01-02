@@ -7,7 +7,7 @@ class KGE(nn.Module):
         super(KGE,self).__init__()
         self.num_ents = n_ents
         if max_norm:
-            self.entities = nn.Embedding(n_ents,ent_dim,max_norm=1.0)
+            self.entities = nn.Embedding(n_ents,ent_dim)
         else:
             self.entities = nn.Embedding(n_ents, ent_dim)
 
@@ -38,7 +38,8 @@ class KGE(nn.Module):
         return sources,targets,rels
 
     def inner_prod(self,s,r,t):
-        prod = torch.mul(r,t).unsqueeze(2)
+        r = r.unsqueeze(1).expand_as(t)
+        prod = torch.mul(r,t).transpose(1,2)
         score = torch.bmm(s, prod)
         return score
 
@@ -50,6 +51,12 @@ class KGE(nn.Module):
     def entity_vectors(self,ids):
         var = util.to_var(ids,volatile=True)
         vector = self.entities(var).data.cpu().numpy()
+        return vector
+
+
+    def relation_vectors(self,ids):
+        var = util.to_var(ids,volatile=True)
+        vector = self.rels(var).data.cpu().numpy()
         return vector
 
 class Rescal(KGE):

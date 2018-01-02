@@ -61,10 +61,10 @@ def to_var(x,volatile=False):
     return var
 
 def pad_arr(arr,val):
-    if len(arr)>=constants.wn_ents:
+    if len(arr)>=constants.fb13_ents:
         return arr
     else:
-        zeros = [val]*(constants.wn_ents-len(arr))
+        zeros = [val]*(constants.fb13_ents-len(arr))
         arr.extend(zeros)
         return arr
 

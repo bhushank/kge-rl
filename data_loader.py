@@ -1,38 +1,38 @@
 import constants
-import cPickle as pickle
+import pickle as pickle
 import os
 
 class Index(object):
     def __init__(self):
-        self._ent_index = dict()
-        self._rel_index = dict()
+        self.ent_index = dict()
+        self.rel_index = dict()
 
     def rel_to_ind(self, rel):
-        if rel not in self._rel_index:
-            self._rel_index[rel] = len(self._rel_index.keys())
-        return self._rel_index[rel]
+        if rel not in self.rel_index:
+            self.rel_index[rel] = len(self.rel_index.keys())
+        return self.rel_index[rel]
 
     def ent_to_ind(self, ent):
-        if ent not in self._ent_index:
-            self._ent_index[ent] = len(self._ent_index.keys())
-        return self._ent_index[ent]
+        if ent not in self.ent_index:
+            self.ent_index[ent] = len(self.ent_index.keys())
+        return self.ent_index[ent]
 
     def load_index(self,dir_name):
         if os.path.exists(os.path.join(dir_name,constants.entity_ind)):
-            self._ent_index = pickle.load(open(os.path.join(dir_name,constants.entity_ind)))
-            self._rel_index = pickle.load(open(os.path.join(dir_name, constants.rel_ind)))
+            self.ent_index = pickle.load(open(os.path.join(dir_name,constants.entity_ind),'rb'))
+            self.rel_index = pickle.load(open(os.path.join(dir_name, constants.rel_ind),'rb'))
         else:
             print("Index not found, creating one.")
 
     def save_index(self,dir_name):
-        pickle.dump(self._ent_index,open(os.path.join(dir_name,constants.entity_ind),'w'))
-        pickle.dump(self._rel_index,open(os.path.join(dir_name, constants.rel_ind), 'w'))
+        pickle.dump(self.ent_index,open(os.path.join(dir_name,constants.entity_ind),'wb'))
+        pickle.dump(self.rel_index,open(os.path.join(dir_name, constants.rel_ind), 'wb'))
 
     def ent_vocab_size(self):
-        return len(self._ent_index)
+        return len(self.ent_index)
 
     def rel_vocab_size(self):
-        return len(self._rel_index)
+        return len(self.rel_index)
 
 class Path(object):
     def __init__(self, s, r, t):
@@ -82,7 +82,10 @@ def read_file(f_name, index, max_examples):
         for line in f:
             if count >= max_examples:
                 return data
-            s,r,t = line.strip().split("\t")
+            line = line.strip().split("\t")
+            if len(line)>3:
+                continue
+            s,r,t = line
             p = Path(index.ent_to_ind(s), index.rel_to_ind(r), index.ent_to_ind(t))
             data.append(p)
             count += 1
