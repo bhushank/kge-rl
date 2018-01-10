@@ -11,11 +11,19 @@ import constants
 import copy
 import torch
 import data_loader
+from embedding_loader import save_embeddings
 
-def main(exp_name,data_path,resume,tune):
+def main(exp_name,data_path,resume,tune,vectors):
     torch.manual_seed(32345)
-    config = json.load(open(os.path.join(data_path,'experiment_specs',"{}.json".format(exp_name))))
     print("Pytorch Version {}".format(torch.__version__))
+    #vectors = True
+    if vectors:
+        config = json.load(open(os.path.join(data_path, "{}".format(exp_name), "config.json".format(exp_name))))
+        print("Saving Embeddings")
+        save_embeddings(os.path.join(data_path,exp_name),config['model'])
+        print("Embeddings Saved.")
+        exit(0)
+    config = json.load(open(os.path.join(data_path, 'experiment_specs', "{}.json".format(exp_name))))
     operation = config.get('operation','train_test')
     if operation=='train':
         train(config,exp_name,data_path,resume,tune)
@@ -25,6 +33,8 @@ def main(exp_name,data_path,resume,tune):
         train_test(config,exp_name,data_path,resume,tune)
     else:
         raise NotImplementedError("{} Operation Not Implemented".format(operation))
+
+
 
 def train_test(config,exp_name,data_path,resume=False,tune=False):
     train(config,exp_name,data_path,resume,tune)
@@ -205,6 +215,7 @@ if __name__=='__main__':
     parser.add_argument('exp_name')
     parser.add_argument('-r', action='store_true')
     parser.add_argument('-t', action='store_true')
+    parser.add_argument('-v', action='store_true')
     args = parser.parse_args()
-    main(args.exp_name,args.data_path,args.r,args.t)
+    main(args.exp_name,args.data_path,args.r,args.t,args.v)
 

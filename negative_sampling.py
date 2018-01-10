@@ -2,7 +2,7 @@ import copy
 import os
 import constants
 from sample_list import sample_list
-import cPickle as pickle
+import pickle as pickle
 from sklearn.neighbors import BallTree
 import numpy as np
 

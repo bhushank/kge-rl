@@ -1,13 +1,14 @@
 import torch
 import torch.nn as nn
 import util
+import numpy as np
 
 class KGE(nn.Module):
     def __init__(self,n_ents,n_rels,ent_dim,rel_dim,max_norm=False):
         super(KGE,self).__init__()
         self.num_ents = n_ents
         if max_norm:
-            self.entities = nn.Embedding(n_ents,ent_dim,max_norm=1.0)
+            self.entities = nn.Embedding(n_ents,ent_dim)
         else:
             self.entities = nn.Embedding(n_ents, ent_dim)
 
@@ -38,7 +39,8 @@ class KGE(nn.Module):
         return sources,targets,rels
 
     def inner_prod(self,s,r,t):
-        prod = torch.mul(r,t).unsqueeze(2)
+        r = r.unsqueeze(1).expand_as(t)
+        prod = torch.mul(r,t).transpose(1,2)
         score = torch.bmm(s, prod)
         return score
 
@@ -50,6 +52,12 @@ class KGE(nn.Module):
     def entity_vectors(self,ids):
         var = util.to_var(ids,volatile=True)
         vector = self.entities(var).data.cpu().numpy()
+        return vector
+
+
+    def relation_vectors(self,ids):
+        var = util.to_var(ids,volatile=True)
+        vector = self.rels(var).data.cpu().numpy()
         return vector
 
 class Rescal(KGE):
@@ -112,7 +120,7 @@ class TransE(KGE):
         #d = torch.abs(d)
         d = torch.mul(d, d)
         d = torch.sum(d,2)
-        return torch.neg(d).squeeze(2)
+        return torch.neg(d)
 
     def output(self,entities,rels,is_target):
         entities = self.entities(util.to_var(entities, True)).unsqueeze(2)
@@ -204,4 +212,17 @@ class ComplEx(KGE):
         return out.squeeze(2).data.cpu().numpy()
 
 
+    def entity_vectors(self, ids):
+        var = util.to_var(ids, volatile=True)
+        ents_r = self.entities(var).data.cpu().numpy()
+        ents_i = self.entities_i(var).data.cpu().numpy()
+        ents_v = np.concatenate((ents_r, ents_i), axis=1)
+        return ents_v
 
+
+    def relation_vectors(self,ids):
+        var = util.to_var(ids,volatile=True)
+        rels_r = self.rels(var).data.cpu().numpy()
+        rels_i = self.rels_i(var).data.cpu().numpy()
+        rels_v = np.concatenate((rels_r,rels_i),axis=1)
+        return rels_v
