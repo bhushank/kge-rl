@@ -16,10 +16,7 @@ from embedding_loader import save_embeddings
 def main(exp_name,data_path,resume,tune,vectors):
     torch.manual_seed(32345)
     print("Pytorch Version {}".format(torch.__version__))
-<<<<<<< HEAD
-    #vectors = True
-=======
->>>>>>> d748b11c93c3756b8dc01c5ef5402a0c386e2886
+
     if vectors:
         config = json.load(open(os.path.join(data_path, "{}".format(exp_name), "config.json".format(exp_name))))
         print("Saving Embeddings")
