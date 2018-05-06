@@ -1,4 +1,4 @@
-		#[Analysis of the Impact of Negative Sampling on Link Prediction in Knowledge Graphs](https://arxiv.org/abs/1708.06816)
+# [Analysis of the Impact of Negative Sampling on Link Prediction in Knowledge Graphs](https://arxiv.org/abs/1708.06816)
 
 
 This code implements the state-of-the-art Knowledge Graph Embedding [algorithms](http://www.cs.technion.ac.il/~gabr/publications/papers/Nickel2016RRM.pdf) such as [RESCAL](http://www.dbs.ifi.lmu.de/~tresp/papers/p271.pdf), [TransE](http://papers.nips.cc/paper/5071-translating-embeddings-for-modeling-multi-relational-data), [COMPLEX](http://www.aaai.org/ocs/index.php/AAAI/AAAI16/paper/download/12484/11828), Computational Graphs are implemented using [PyTorch](https://pytorch.org/).
