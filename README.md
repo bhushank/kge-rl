@@ -19,7 +19,7 @@ This code implements the state-of-the-art Knowledge Graph Embedding [algorithms]
 * "is_dev": True if you want to test on validation data (must be specified),
 * "is_typed": True if you want to use Type Regularizer (default False),
 * "l2": Strength of L2 regularizer (must be specified),
-# “lr”: Learning rate for ADAM SGD optimizer
+* “lr”: Learning rate for ADAM SGD optimizer
 * "model": Model (rescal, transE, distmult, complex) (must be specified),
 * "num_epochs": Max number of epochs (default 100),
 * “neg_sampler”: Negative Sampling (random, corrupt, relational, typed, nn, adversarial). Must be specified 
