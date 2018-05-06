@@ -11,7 +11,7 @@ This code implements the state-of-the-art Knowledge Graph Embedding [algorithms]
 ## Configuration
 * Create directory ./data/experiment_specs/
 * Experiment configurations are specified as JSON files inside the experiment_specs directory.
-* An example configuration file (freebase_bilinear.json) can be found in the repository.
+* An example configuration file (complex.json) can be found in the repository.
 ### Specifications
 * "batch_size": Train Batch Size,
 * "entity_dim": Embedding Dimension (must be specified),
