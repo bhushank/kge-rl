@@ -144,7 +144,7 @@ class Corrupt_Sampler(Static_Sampler):
             ents[0].add(ex.s)
             ents[1].add(ex.t)
             typed[ex.r] = ents
-        assert len(typed.keys())==constants.fb15k_rels
+        #assert len(typed.keys())==constants.fb15k_rels
         return typed
 
     def get_candidates(self,ex,is_target):

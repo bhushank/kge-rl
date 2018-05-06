@@ -20,13 +20,12 @@ class SGD(object):
         self.ns = negative_sampler
         self.results_dir = results_dir
         self.model_name = config['model']
-        self.is_softmax = config.get('softmax', False)
         #SGD Params
         lr = config.get('lr',0.001)
         l2 = config.get('l2',0.0)
         #self.batch_size = config.get('batch_size',constants.batch_size)
-        self.batch_size = constants.batch_size
-        print("lr: {:.4f}, l2: {:.5f}, batch_size: {}, Softmax: {}".format(lr,l2,self.batch_size,self.is_softmax))
+        self.batch_size = config.get('batch_size',constants.batch_size)
+        print("lr: {:.4f}, l2: {:.5f}, batch_size: {}".format(lr,l2,self.batch_size))
         self.optim = Adam(model.parameters(),lr=lr,weight_decay=l2)
         if state is not None:
             self.optim.load_state_dict(state)
@@ -34,21 +33,19 @@ class SGD(object):
         self.prev_score = evaluator.init_score
         self.early_stop_counter = constants.early_stop_counter
         self.patience = constants.patience
-        self.num_epochs = constants.num_epochs
+        self.num_epochs = config['num_epochs']
 
         self.report_steps = constants.report_steps
         self.test_batch_size = config.get('test_batch_size',constants.test_batch_size)
         self.halt = False
-        self.dump = False # save without checking
+        self.dump = True # save without checking
 
         self.prev_steps = 0
         self.prev_time = time.time()
 
         #Loss
         self.mm = nn.MarginRankingLoss(margin=1)
-        self.logistic = nn.SoftMarginLoss()
-        self.cross_ent = nn.CrossEntropyLoss()
-
+        self.bce = torch.nn.BCEWithLogitsLoss()
 
     def minimize(self):
         print("Training...")
@@ -86,39 +83,27 @@ class SGD(object):
         negs = self.ns.batch_sample(batch, is_target)
         batch = util.get_triples(batch, negs, is_target, volatile=volatile)
         score = self.model(*batch)
-
-        # score at index 0 is positive
-        if self.is_softmax:
-            return self.softmax(score, volatile)# + self.softmax(s_score, volatile)
-        if self.model_name in {'transE', 'rescal','distmult','complex'}:
-            return self.max_margin(score, volatile)# + self.max_margin(t_score, volatile)
-        return self.nll(score, volatile) #+ self.nll(t_score, volatile)
+        #return self.logistic(score)
+        return self.max_margin(score)
 
     def fprop(self,batch,volatile=False):
         return self.forward(batch,volatile,True) + self.forward(batch, volatile, False)
 
-    def max_margin(self,scores,volatile):
-        y = util.to_var(np.ones(scores.size()[0],dtype='float32'),volatile=volatile)
+    def max_margin(self,scores):
+        y = util.to_var(np.ones(scores.size()[0],dtype='float32'), requires_grad=False)
         loss = self.mm(scores[:,0],scores[:,1],y)
         for i in range(2,scores.size()[1]):
             loss += self.mm(scores[:,0],scores[:,i],y)
         return loss/(scores.size()[1]-1.)
 
-    def nll(self,scores,volatile):
-        y_pos = util.to_var(np.ones(scores.size()[0],dtype='float32'),volatile=volatile)
-        y_neg = util.to_var(-1.*np.ones(scores.size()[0], dtype='float32'),volatile=volatile)
-        loss = self.logistic(scores[:, 0],y_pos)
+    def logistic(self,scores):
+        y_pos = util.to_var(np.ones(scores.size()[0],dtype='float32'),requires_grad=False)
+        y_neg = util.to_var(np.zeros(scores.size()[0], dtype='float32'),requires_grad=False)
+        loss = self.bce(scores[:, 0],y_pos)
         for i in range(1,scores.size()[1]):
-            loss += self.logistic(scores[:, i], y_neg)
+            loss += self.bce(scores[:, i], y_neg)
         return loss/scores.size()[1]
 
-    def softmax(self,scores,volatile):
-        # Need to recreate y every time because batch sizes may vary, though one could cache for batch sizes
-        # Very large batch size, negligible effect
-        y = np.zeros(scores.size()[0],dtype='int')
-        y = util.to_var(y,volatile=volatile)
-        loss = self.cross_ent(scores,y)
-        return loss
 
     def save(self,dump=False):
         curr_score = self.evaluate(self.dev,self.test_batch_size,True)

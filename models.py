@@ -177,6 +177,15 @@ class ComplEx(KGE):
 
 
     def forward(self,sources,targets,rels):
+
+
+        # score = <w_r,e_s,e_o> + <w_r,e_s_i,e_o_i> + <w_r_i,e_s,e_o_i> - <w_r_i,e_s_i,e_o>
+        if sources.size()[1] > targets.size()[1]:
+            return self.complex(targets, rels, sources)
+
+        return self.complex(sources, rels, targets)
+
+    def complex(self, sources, rels, targets):
         sources_i = self.entities_i(sources)
         targets_i = self.entities_i(targets)
         rels_i = self.rels_i(rels)
@@ -184,17 +193,10 @@ class ComplEx(KGE):
         targets = self.entities(targets)
         rels = self.rels(rels)
 
-        # score = <w_r,e_s,e_o> + <w_r,e_s_i,e_o_i> + <w_r_i,e_s,e_o_i> - <w_r_i,e_s_i,e_o>
-        if sources.size()[1] > targets.size()[1]:
-            out = self.inner_prod(sources, rels,targets) \
-                  + self.inner_prod(sources_i,rels,targets_i) \
-              + self.inner_prod(sources,rels_i,targets_i) \
-                  - self.inner_prod(sources_i,rels_i,targets)
-        else:
-            out = self.inner_prod(targets, rels,sources) \
-                  + self.inner_prod(targets_i,rels,sources_i) \
-              + self.inner_prod(targets_i,rels_i,sources) \
-                  - self.inner_prod(targets,rels_i,sources_i)
+        out = self.inner_prod(targets, rels, sources) \
+              + self.inner_prod(targets_i, rels, sources_i) \
+              + self.inner_prod(targets_i, rels_i, sources) \
+              - self.inner_prod(targets, rels_i, sources_i)
         out = out.squeeze(2)
         return out
 

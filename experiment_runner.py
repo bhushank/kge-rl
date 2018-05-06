@@ -16,11 +16,12 @@ from embedding_loader import save_embeddings
 def main(exp_name,data_path,resume,tune,vectors):
     torch.manual_seed(32345)
     print("Pytorch Version {}".format(torch.__version__))
-
+    
     if vectors:
+        cuda = torch.cuda.is_available()
         config = json.load(open(os.path.join(data_path, "{}".format(exp_name), "config.json".format(exp_name))))
         print("Saving Embeddings")
-        save_embeddings(os.path.join(data_path,exp_name),config['model'])
+        save_embeddings(os.path.join(data_path,exp_name),config['model'],is_cpu=not cuda)
         print("Embeddings Saved.")
         exit(0)
     config = json.load(open(os.path.join(data_path, 'experiment_specs', "{}.json".format(exp_name))))

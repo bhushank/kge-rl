@@ -49,13 +49,13 @@ def get_triples(batch,negs,is_target=True, volatile=False,is_pad=False):
             targets.append(t)
             rels.append(ex.r)
 
-    return to_var(sources,volatile=volatile), to_var(targets,volatile=volatile),to_var(rels,volatile=volatile)
+    return to_var(sources,volatile=volatile, requires_grad=False), to_var(targets,volatile=volatile, requires_grad=False),to_var(rels,volatile=volatile, requires_grad=False)
 
-def to_var(x,volatile=False):
+def to_var(x,volatile=False, requires_grad=False):
     if 'cuda' not in cache:
         cache['cuda'] = torch.cuda.is_available()
     cuda = cache['cuda']
-    var = Variable(torch.from_numpy(np.asarray(x)),volatile=volatile)
+    var = Variable(torch.from_numpy(np.asarray(x)),volatile=volatile, requires_grad=requires_grad)
     if cuda:
         return var.cuda()
     return var

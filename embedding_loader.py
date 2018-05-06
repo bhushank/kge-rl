@@ -18,14 +18,19 @@ def get_model(model,n_ents,n_rels,ent_dim):
         raise NotImplementedError("Model {} not implemented".format(model))
 
 
-def save_embeddings(results_dir,model_name,ent_dim=100):
+def save_embeddings(results_dir,model_name,is_cpu=True,ent_dim=100):
     index = Index()
     index.load_index(results_dir)
     n_ents = index.ent_vocab_size()
     n_rels = index.rel_vocab_size()
     model = get_model(model_name,n_ents,n_rels,ent_dim)
     params_path = os.path.join(results_dir, '{}_params.pt'.format(model_name))
-    model.load_state_dict(torch.load(params_path))
+    if is_cpu:
+        model_params = torch.load(params_path, map_location=lambda storage, loc: storage)
+    else:
+        model_params = torch.load(params_path)
+
+    model.load_state_dict(model_params)
 
     relation_embeddings = dict()
     entity_embeddings = dict()
