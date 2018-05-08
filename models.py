@@ -8,7 +8,7 @@ class KGE(nn.Module):
         super(KGE,self).__init__()
         self.num_ents = n_ents
         if max_norm:
-            self.entities = nn.Embedding(n_ents,ent_dim)
+            self.entities = nn.Embedding(n_ents,ent_dim,max_norm=1)
         else:
             self.entities = nn.Embedding(n_ents, ent_dim)
 
